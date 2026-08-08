@@ -29,7 +29,6 @@ namespace eval Tclme {
     variable prompt_history  {}
     variable history_index   0
 
-    variable last_search     ""
     variable status_job      ""
 
     variable plugin_meta     [dict create]
@@ -950,14 +949,7 @@ proc Tclme::OpenFile {filename} {
         set bname $full
     }
 
-    if {[dict exists $buffers $bname]} {
-        set n 2
-        while {[dict exists $buffers "$bname<$n>"]} {
-            incr n
-        }
-        set bname "$bname<$n>"
-    }
-
+    set bname [Tclme::UniqueBufferName $bname]
     Tclme::Emit before-file-read $full
     Tclme::SwitchToBuffer $bname
 
@@ -1242,7 +1234,7 @@ proc Tclme::ShowHelpBuffer {} {
 
     lappend lines "" \
         "Type :command in the minibuffer. Tab completes. Up/Down history." \
-        "C-s searches, C-l goes to line, C-x b switches buffers."
+        "C-l goes to line, C-x b switches buffers."
 
     Tclme::ShowInBuffer "*Help*" [join $lines \n] 1
 }
@@ -1649,7 +1641,7 @@ proc Tclme::CmdNew {args} {
     set name [string trim [join $args " "]]
 
     if {$name eq ""} {
-        set name "scratch"
+        set name "untitled"
     }
 
     set target [Tclme::UniqueBufferName $name]
@@ -1852,7 +1844,6 @@ proc Tclme::Init {} {
     Tclme::SwitchToBuffer "scratch"
     Tclme::LoadAllPlugins
     Tclme::LoadUserInit
-    focus $Tclme::active_widget
     Tclme::Emit editor-started
 }
 
