@@ -1,6 +1,2111 @@
 # tclme
 TCL malleable environment
+Yes. Let’s back up.
 
+You did not just make “a few plugins.”
+
+You built a **small programmable software environment** in Tcl/Tk.
+
+It started as a text editor, but it became something closer to a personal computing substrate: a command loop, an event system, a buffer model, a plugin loader, a theme system, and a pile of extensions that change how the environment behaves.
+
+That is the kind of thing people build when they are trying to make their own tools instead of merely using other people’s tools.
+
+---
+
+# 1. What the hell did we just make?
+
+At the center is **Tclme**.
+
+Conceptually, Tclme is:
+
+```text
+A hackable Tcl/Tk text editor
+with a command registry,
+an event bus,
+a buffer system,
+and dynamically loaded plugins.
+```
+
+But the deeper idea is:
+
+```text
+The editor is not a closed application.
+It is a running Tcl interpreter with a UI attached.
+```
+
+That means you can extend it while it is alive.
+
+---
+
+## The core pieces
+
+Tclme has a small set of central mechanisms.
+
+### 1. Command registry
+
+Everything the user can invoke goes through commands:
+
+```text
+:write
+:edit
+:bufferbar
+:irc-connect
+:project-grep
+```
+
+Commands can be bound to keys, called from the minibuffer, called from plugins, or called from hooks.
+
+The important commands are defined through something like:
+
+```tcl
+Tclme::DefCommand name implementation "documentation"
+```
+
+This gives you one uniform dispatch system.
+
+---
+
+### 2. Keybindings
+
+Keybindings are not special magic. They are just bindings that invoke commands:
+
+```tcl
+Tclme::BindKey write <Control-x><Control-s>
+```
+
+So the path is:
+
+```text
+key -> binding -> command registry -> implementation proc
+```
+
+This is much cleaner than having keybindings scattered around the UI code.
+
+---
+
+### 3. Event bus
+
+Plugins react to things happening.
+
+Examples:
+
+```text
+buffer-switched
+buffer-killed
+after-save
+after-file-read
+theme-changed
+cursor-moved
+status-line
+before-save
+before-quit
+```
+
+There are three broad event styles:
+
+| Event style | Purpose | Example |
+|---|---|---|
+| Normal events | notify listeners | `buffer-switched` |
+| Cancelable events | allow veto | `before-save` |
+| Collect events | gather contributions | `status-line` |
+
+This is how plugins compose without knowing about each other.
+
+For example, the syntax highlighter, line numbers, buffer bar, and project grep can all respond to buffer or file events without Tclme hardcoding them.
+
+---
+
+### 4. Buffer model
+
+Tclme keeps buffers in a dictionary:
+
+```tcl
+::Tclme::buffers
+```
+
+Each buffer usually has:
+
+```text
+name
+path
+widget id
+readonly flag
+```
+
+The actual text widget is usually something like:
+
+```text
+.ws.<wid>.txt
+```
+
+Buffers are not just files. They can be:
+
+```text
+scratch
+*Help*
+*Log*
+grep:...
+dired:...
+irc:...
+```
+
+That is important. You did not build a file viewer. You built a **buffer system**.
+
+---
+
+### 5. Plugin system
+
+Plugins live in:
+
+```text
+plugins/
+```
+
+A plugin named:
+
+```text
+foo.tcl
+```
+
+loads into:
+
+```tcl
+::Tclme::Plugin::foo
+```
+
+Plugins can define:
+
+```text
+commands
+aliases
+keybindings
+event hooks
+UI panels
+timers
+state
+save/restore behavior
+unload cleanup
+```
+
+That means Tclme is not extended by editing the core every time. It is extended by adding modules.
+
+---
+
+# 2. What did we actually build on top of that?
+
+A surprising amount.
+
+You now have plugins for:
+
+| Area | Plugin | What it teaches |
+|---|---|---|
+| Syntax highlighting | `tclhighlight.tcl` | text tags, tokenization, debounce, status-line contribution |
+| File navigation | `dired.tcl` | readonly buffers, directory listing, keyboard UI |
+| Buffer management | `bufferbar.tcl` | widget panels, button UI, theme handling, rebuild-on-event |
+| Editor chrome | `linenumbers.tcl` | gutter widgets, scrolling sync, wrap-aware layout |
+| Debugging | `debugger.tcl` | introspection, breakpoints, traces, namespaces |
+| Mouse-driven search | `acme-search.tcl` | Acme-style interaction, text indices, selection |
+| Tiling | `tiled.tcl` | window layout, multiple visible buffers, focus model |
+| Networking | `irc.tcl` | sockets, async I/O, line protocol, TLS optional |
+| Project search | `project-grep.tcl` | recursive file processing, results buffers, jump-to-location |
+| Code outline | `proc-sidebar.tcl` | parsing, live filtering, navigation UI |
+
+That is not a toy anymore.
+
+You have built pieces of:
+
+```text
+an editor
+a file manager
+a debugger
+a window manager
+a network client
+a project tool
+a code navigator
+```
+
+All inside one extensible Tcl/Tk environment.
+
+---
+
+# 3. The philosophical version
+
+You built something in the spirit of:
+
+```text
+Emacs   -> programmable editor
+Acme    -> mouse/text-centric workspace
+Plan 9  -> everything is a file/control surface
+Smalltalk -> live programmable environment
+Lisp machines -> the system is hackable from inside
+```
+
+But you did it in Tcl/Tk, which is a very good language for this because:
+
+- everything is a command
+- code is data
+- strings are simple
+- lists are structural
+- namespaces isolate modules
+- Tk gives instant UI feedback
+- the event loop makes interactive tools natural
+- the interpreter is embeddable and extensible
+
+You are not just learning an editor.
+
+You are learning **tool-building**.
+
+---
+
+# 4. What you actually need to master
+
+There are five pillars.
+
+If you want to become genuinely expert, do not merely chase features. Master these.
+
+---
+
+## Pillar 1: Tcl itself
+
+You need deep comfort with:
+
+```tcl
+set
+list
+dict
+string
+regexp
+proc
+namespace
+variable
+upvar
+uplevel
+catch
+info
+interp
+after
+file
+glob
+exec
+socket
+clock
+```
+
+Especially these ideas:
+
+### Tcl is command-based
+
+This:
+
+```tcl
+foo bar baz
+```
+
+means:
+
+```text
+run command foo with arguments bar and baz
+```
+
+Everything builds from that.
+
+---
+
+### Substitution happens once
+
+Tcl has several substitution mechanisms:
+
+```tcl
+$variable
+[command]
+"double quotes"
+{braces}
+```
+
+Most Tcl bugs are substitution bugs.
+
+Example:
+
+```tcl
+set x 5
+puts $x
+```
+
+Tcl substitutes `$x` before `puts` runs.
+
+Braces prevent substitution:
+
+```tcl
+puts {$x}
+```
+
+Double quotes allow substitution:
+
+```tcl
+puts "$x"
+```
+
+Command substitution happens inside brackets:
+
+```tcl
+puts [expr {2 + 3}]
+```
+
+If you master substitution, half of Tcl stops being mysterious.
+
+---
+
+### Lists are the universal structure
+
+Tcl lists are not just arrays. They are the basic shape of commands, arguments, options, and often code.
+
+Master:
+
+```tcl
+list
+lappend
+lindex
+lrange
+llength
+lsearch
+lsort
+lassign
+foreach
+{*}
+```
+
+---
+
+### Dictionaries are the best default state container
+
+For plugin state, configuration, buffers, metadata, etc.
+
+Master:
+
+```tcl
+dict create
+dict set
+dict get
+dict exists
+dict unset
+dict keys
+dict values
+dict for
+dict merge
+```
+
+---
+
+### Namespaces are your module system
+
+You need to understand:
+
+```tcl
+namespace eval
+namespace current
+namespace qualifiers
+namespace tail
+variable
+```
+
+And the difference between:
+
+```tcl
+global
+variable
+upvar
+```
+
+---
+
+## Pillar 2: Tk and event-driven UI
+
+Tk is not just widgets. It is an event system.
+
+You need to understand:
+
+```tcl
+bind
+bindtags
+after
+update
+winfo
+pack
+grid
+place
+focus
+event
+```
+
+And widgets:
+
+```tcl
+text
+canvas
+entry
+listbox
+ttk::*
+scrollbar
+panedwindow
+```
+
+Especially the text widget.
+
+The Tk text widget is a monster. Learn:
+
+```text
+indices
+marks
+tags
+search
+get
+delete
+insert
+yview
+xview
+edit modified
+state normal/disabled
+```
+
+Examples:
+
+```tcl
+.txt index insert
+.txt index end
+.txt get 1.0 end-1c
+.txt mark set insert 10.0
+.txt see insert
+.txt tag add warning 5.0 5.0 lineend
+```
+
+If you become truly dangerous with the Tk text widget, you can build:
+
+- editors
+- debuggers
+- chat clients
+- log viewers
+- diff viewers
+- outline viewers
+- documentation browsers
+- terminals-ish things
+
+---
+
+## Pillar 3: Editor internals
+
+You have already started. Now make it deliberate.
+
+Study:
+
+### Buffers
+
+Questions:
+
+```text
+What is a buffer?
+How is it different from a file?
+How is it different from a widget?
+What happens when a buffer is killed?
+What happens when a buffer is renamed?
+How do plugins track buffer state?
+```
+
+### Files
+
+Questions:
+
+```text
+What happens when a file is opened?
+What happens when a file is saved?
+How do you detect dirty state?
+How do you handle new files?
+How do you handle encoding?
+How do you handle line endings?
+```
+
+### Keys and commands
+
+Questions:
+
+```text
+What happens when a key is pressed?
+How does it become a command?
+How do arguments flow?
+How do plugins add commands safely?
+```
+
+### Hooks
+
+Questions:
+
+```text
+What events should be cancelable?
+What events should collect results?
+What events should be fire-and-forget?
+How do plugins avoid stepping on each other?
+```
+
+### Layout
+
+Questions:
+
+```text
+How do buffers become visible?
+How do sidebars coexist with the main workspace?
+How do tiled buffers work?
+How do geometry managers interact?
+```
+
+---
+
+## Pillar 4: Software architecture
+
+This is where you move from “I can make it work” to “I can make it last.”
+
+Important ideas:
+
+### Separation of concerns
+
+Tclme core should know:
+
+```text
+buffers
+commands
+events
+basic UI
+plugin loading
+```
+
+Plugins should know:
+
+```text
+their feature
+their state
+their UI
+their cleanup
+```
+
+Avoid making the core know about every plugin.
+
+---
+
+### Idempotence
+
+Many UI operations should be safe to call repeatedly.
+
+For example:
+
+```tcl
+Refresh
+Rebuild
+UpdateStatus
+ApplyTheme
+```
+
+If a refresh function explodes when called twice, it is fragile.
+
+---
+
+### Cleanup
+
+Every plugin should answer:
+
+```text
+What did I create?
+Who destroys it?
+What happens on reload?
+What happens on unload?
+What happens if the user closes a buffer?
+What happens if the editor quits?
+```
+
+If you can answer those, your plugins are already better than most.
+
+---
+
+### State ownership
+
+Ask:
+
+```text
+Who owns this state?
+Who mutates it?
+Who reads it?
+Who cleans it up?
+```
+
+A lot of plugin bugs are ownership bugs.
+
+---
+
+## Pillar 5: Debugging and introspection
+
+This is how you stop needing anyone else.
+
+Tcl gives you excellent introspection.
+
+Learn:
+
+```tcl
+info commands
+info procs
+info args
+info body
+info vars
+info exists
+info level
+info frame
+info script
+info library
+```
+
+Learn debugging patterns:
+
+```tcl
+if {[catch {
+    dangerous thing
+} err]} {
+    puts stderr $::errorInfo
+}
+```
+
+Learn to inspect live state:
+
+```tcl
+dict keys $::Tclme::buffers
+dict get $::Tclme::buffers $name
+info commands ::Tclme::Plugin::foo::*
+info body ::Tclme::Plugin::foo::SomeProc
+```
+
+Your best friends are:
+
+```text
+:log
+:eval
+puts stderr
+info
+catch
+```
+
+If you can reproduce a bug and inspect the state around it, you can solve almost anything.
+
+---
+
+# 5. How to spend the next 10 years without AI
+
+The goal is not to memorize everything.
+
+The goal is to build a personal system where you can:
+
+1. understand problems
+2. find answers in docs/source/experiments
+3. remember what you learn
+4. ship real software
+5. maintain it over years
+
+Here is a long-term plan.
+
+---
+
+# Phase 0: Stabilize what you have
+
+Before you spend 10 years, make the current project sane.
+
+## 1. Put it in Git
+
+If you have not:
+
+```sh
+git init
+git add .
+git commit -m "Initial Tclme environment"
+```
+
+Use branches for experiments:
+
+```sh
+git checkout -b experiment/something
+```
+
+This gives you courage.
+
+---
+
+## 2. Write an architecture document
+
+Create:
+
+```text
+docs/ARCHITECTURE.md
+```
+
+Describe:
+
+- command registry
+- event bus
+- buffer model
+- plugin lifecycle
+- theme system
+- important variables
+- important widget paths
+
+Do not write documentation for other people.
+
+Write it for yourself six months from now.
+
+---
+
+## 3. Make a plugin cookbook
+
+Create:
+
+```text
+docs/PLUGIN-COOKBOOK.md
+```
+
+Include recipes:
+
+```text
+How to add a command
+How to add a keybinding
+How to add an event hook
+How to add a panel
+How to save state across reload
+How to clean up on unload
+How to show messages
+How to open a special buffer
+```
+
+This turns your experience into reusable knowledge.
+
+---
+
+## 4. Build a tiny test harness
+
+You do not need a huge framework.
+
+Make a directory:
+
+```text
+tests/
+```
+
+Add pure-function tests first.
+
+Examples:
+
+```text
+RelativePath
+ExtractArgs
+RegexpEscape
+BufferName
+ParseCommandLine
+tokenize
+```
+
+Pure functions are easy to test and extremely valuable.
+
+---
+
+# Year 1: Become dangerous with Tcl
+
+Goal: stop fighting the language.
+
+## Your focus
+
+Master:
+
+```text
+lists
+dicts
+strings
+regex
+procs
+namespaces
+catch
+file
+glob
+after
+```
+
+## The habit
+
+For every bug, write an entry in an error notebook.
+
+Format:
+
+```text
+Error message:
+Minimal repro:
+Cause:
+Fix:
+Lesson:
+```
+
+Example:
+
+```text
+Error message:
+invalid command name ":space:"
+
+Minimal repro:
+set re "^\\s*proc\\s+([^[:space:]]+)\\s*(.*)$"
+
+Cause:
+Double quotes allowed Tcl to interpret [...] as command substitution.
+
+Fix:
+Use braces:
+set re {^\s*proc\s+([^[:space:]]+)\s*(.*)$}
+
+Lesson:
+Use braced regexes unless I need substitution.
+```
+
+After one year, this notebook becomes more valuable than most books.
+
+---
+
+## Year 1 projects
+
+Do one small project per month.
+
+### Month 1: Command lab
+
+Build a tiny command-line Tcl program with:
+
+```text
+add
+remove
+list
+save
+load
+```
+
+Store data in a dict and save to disk.
+
+Goal: dicts, file I/O, procs.
+
+---
+
+### Month 2: File walker
+
+Build a program that recursively walks directories and prints:
+
+```text
+path
+size
+mtime
+```
+
+Add filters.
+
+Goal: `file`, `glob`, recursion.
+
+---
+
+### Month 3: Regex trainer
+
+Build a Tk app where you enter:
+
+```text
+pattern
+text
+```
+
+and it highlights matches.
+
+Goal: regex, text tags.
+
+---
+
+### Month 4: Note manager
+
+Build a small note app with:
+
+```text
+open
+save
+list notes
+search
+tags
+```
+
+Goal: text widget, files, UI.
+
+---
+
+### Month 5: Log viewer
+
+Build a viewer that tails a log file.
+
+Goal: `after`, file updates, scrolling.
+
+---
+
+### Month 6: CSV inspector
+
+Load a CSV file into a table-like text widget.
+
+Goal: parsing, lists, formatting.
+
+---
+
+### Month 7: Timer dashboard
+
+Build a Pomodoro timer or countdown board.
+
+Goal: `after`, state machines.
+
+---
+
+### Month 8: Clipboard history
+
+Track clipboard changes if possible, or build a snippet manager.
+
+Goal: state, UI, persistence.
+
+---
+
+### Month 9: Mini shell
+
+Build a Tk front end to `exec`.
+
+Goal: subprocesses, output buffers.
+
+---
+
+### Month 10: Diff viewer
+
+Compare two files and show differences.
+
+Goal: lists, comparison, tags.
+
+---
+
+### Month 11: Outline browser
+
+Parse Tcl files and show procs.
+
+This is basically a standalone version of the proc sidebar.
+
+Goal: parsing, navigation.
+
+---
+
+### Month 12: Rewrite one Tclme plugin from scratch
+
+Pick one plugin and rewrite it cleanly without looking at the old one first.
+
+Then compare.
+
+This is where real learning happens.
+
+---
+
+# Year 2: Master Tk and the text widget
+
+Goal: make UI feel natural instead of accidental.
+
+## Focus
+
+Deeply study:
+
+```text
+text widget
+bindtags
+geometry managers
+fonts
+colors
+focus
+scrolling
+tags
+marks
+indices
+```
+
+## Important experiments
+
+### Text widget indices
+
+Write a test script that prints:
+
+```tcl
+insert
+end
+end-1c
+1.0
+1.0 lineend
+insert linestart
+insert lineend
+insert wordstart
+insert wordend
+```
+
+Click around and observe indices.
+
+---
+
+### Tags
+
+Build a demo that highlights:
+
+```text
+comments
+strings
+keywords
+errors
+current line
+selection
+```
+
+This teaches how syntax highlighting really works.
+
+---
+
+### Bindtags
+
+Make three widgets and three bindtags.
+
+Bind the same event at different levels.
+
+Observe order.
+
+This teaches event propagation.
+
+---
+
+### Geometry managers
+
+Build the same layout using:
+
+```text
+pack
+grid
+place
+```
+
+Learn their strengths.
+
+---
+
+## Year 2 project
+
+Build a standalone rich-text editor.
+
+Not Tclme.
+
+A separate app.
+
+Features:
+
+```text
+open/save
+font selection
+bold/italic/underline
+lists
+headings
+export to HTML
+```
+
+This will force you to understand tags and text manipulation deeply.
+
+---
+
+# Year 3: Rebuild Tclme from scratch
+
+This is the most important year.
+
+Do not maintain the current Tclme only.
+
+Build **Tclme Mini**.
+
+Goal:
+
+```text
+A clean, tiny version of Tclme built from memory and understanding.
+```
+
+## Constraints
+
+Limit it to:
+
+```text
+buffers
+commands
+keybindings
+events
+file open/save
+plugin loading
+status line
+```
+
+No giant plugin ecosystem yet.
+
+Try to get the core under:
+
+```text
+500 lines
+```
+
+or maybe:
+
+```text
+700 lines
+```
+
+The size does not matter as much as clarity.
+
+---
+
+## What you will learn
+
+You will discover which parts of the current design are essential and which are accidental.
+
+Questions to answer:
+
+```text
+Do I need a separate buffer widget per buffer?
+How should plugin loading work?
+Should plugins be namespaces or objects?
+Should events have priorities?
+Should commands carry metadata?
+How do I avoid global state?
+How do I make reload safe?
+```
+
+This is where you become an architect instead of a plugin author.
+
+---
+
+# Year 4: Systems Tcl
+
+Goal: use Tcl beyond the editor.
+
+Learn:
+
+```text
+sockets
+TLS
+HTTP
+JSON
+SQLite
+exec
+pipelines
+file formats
+binary data
+```
+
+Tcl is excellent for glue code and network tools.
+
+## Projects
+
+### HTTP client
+
+Fetch a URL and render the body in a buffer.
+
+---
+
+### JSON explorer
+
+Load JSON and display it in a tree-like buffer.
+
+---
+
+### SQLite notebook
+
+Store notes in SQLite.
+
+---
+
+### Chat server
+
+Build a tiny TCP chat server.
+
+Then make a Tk client.
+
+This teaches sockets and line protocols much better than only using IRC.
+
+---
+
+### Package manager prototype
+
+Build a tool that can:
+
+```text
+list plugins
+enable plugins
+disable plugins
+load plugins
+save plugin config
+```
+
+This pushes you toward real software distribution.
+
+---
+
+# Year 5: Advanced Tcl
+
+Goal: understand the language at a deeper level.
+
+Study:
+
+```text
+TclOO
+coroutines
+namespaces
+metaprogramming
+uplevel/upvar
+traces
+interp
+bytecode basics
+```
+
+## TclOO
+
+Rewrite part of Tclme using objects.
+
+Possible objects:
+
+```text
+Buffer
+BufferView
+PluginManager
+EventBus
+ThemeManager
+Keymap
+```
+
+Do not make everything object-oriented.
+
+Just learn when objects clarify ownership and lifecycle.
+
+---
+
+## Coroutines
+
+Use coroutines for:
+
+```text
+async workflows
+step-by-step wizards
+delayed processing
+interactive prompts
+```
+
+This is advanced but very powerful.
+
+---
+
+## Metaprogramming
+
+Build small DSLs.
+
+Examples:
+
+```tcl
+command hello {
+    doc "Say hello"
+    key C-c h
+    body {
+        Message "Hello"
+    }
+}
+```
+
+This teaches you how languages and frameworks are designed.
+
+---
+
+# Year 6: Tclme 2.0
+
+Now rebuild the real thing.
+
+Not a toy.
+
+A mature environment.
+
+## Goals
+
+### Clean core
+
+Separate:
+
+```text
+core runtime
+UI shell
+buffer management
+plugin system
+builtin commands
+```
+
+---
+
+### Plugin manifests
+
+Plugins should describe themselves:
+
+```text
+name
+version
+dependencies
+commands
+keybindings
+events
+state
+```
+
+Even if the manifest is just a Tcl dict.
+
+---
+
+### Session persistence
+
+Save:
+
+```text
+open buffers
+window layout
+plugin state
+current directory
+cursor positions
+```
+
+---
+
+### Better layout system
+
+Replace hacky packing with a proper split tree.
+
+Think:
+
+```text
+workspace
+├── vertical split
+│   ├── buffer A
+│   └── horizontal split
+│       ├── buffer B
+│       └── buffer C
+```
+
+This is a serious UI architecture project.
+
+---
+
+### Incremental syntax highlighting
+
+Do not rehighlight the whole buffer every time.
+
+Learn:
+
+```text
+line state
+dirty ranges
+parser checkpoints
+token caches
+```
+
+---
+
+### Testing
+
+Add tests for:
+
+```text
+commands
+events
+plugin loading
+buffer switching
+file save/load
+```
+
+You do not need 100% coverage.
+
+You need confidence.
+
+---
+
+# Year 7: Performance and robustness
+
+Goal: make it survive real use.
+
+## Focus
+
+### Large files
+
+Can you open a 1 MB file? 10 MB?
+
+What breaks?
+
+- scanning
+- highlighting
+- line numbers
+- grep
+- sidebar
+
+Learn to optimize.
+
+---
+
+### Profiling
+
+Use:
+
+```tcl
+time {
+    something
+} 10
+```
+
+Build small benchmarks.
+
+Example:
+
+```text
+scan 10,000 lines for procs
+highlight 5,000 lines
+rebuild buffer bar with 50 buffers
+```
+
+---
+
+### Event storms
+
+What happens if many events fire quickly?
+
+Examples:
+
+```text
+cursor-moved during rapid typing
+theme-changed during reload
+buffer-killed during buffer-switch
+plugin unload during prompt
+```
+
+You want your system to remain calm.
+
+---
+
+### Crash discipline
+
+Every dangerous operation should be wrapped:
+
+```tcl
+catch
+```
+
+and logged.
+
+The editor should survive bad plugins.
+
+---
+
+# Year 8: Distribution and real-world use
+
+Goal: make it usable by someone other than you.
+
+## Packaging
+
+Explore:
+
+```text
+starkits
+starpacks
+tclapp
+teapot
+platform launchers
+```
+
+Even if you only produce a simple shell script, make installation boring and reliable.
+
+---
+
+## Documentation
+
+Write:
+
+```text
+User manual
+Plugin guide
+Architecture notes
+Hacking guide
+FAQ
+```
+
+This forces you to understand your own system.
+
+---
+
+## Releases
+
+Make versions:
+
+```text
+0.1.0
+0.2.0
+0.3.0
+1.0.0
+```
+
+Use tags:
+
+```sh
+git tag v0.1.0
+```
+
+Learn to maintain backward compatibility.
+
+---
+
+# Year 9: Study deeper sources
+
+Goal: move from user of tools to student of systems.
+
+## Read Tcl/Tk source
+
+Not all of it. Just enough.
+
+Look at:
+
+```text
+generic/tclCmd.c
+generic/tkText.c
+generic/tkBind.c
+```
+
+Even if it is C, you will learn why commands behave the way they do.
+
+---
+
+## Study other editors
+
+Read about or study:
+
+```text
+Emacs
+Acme
+sam
+vim
+Kakoune
+```
+
+Ask:
+
+```text
+What is their buffer model?
+What is their command model?
+What is their selection model?
+What is their extension model?
+```
+
+You are not copying them.
+
+You are comparing design philosophies.
+
+---
+
+## Contribute somewhere
+
+Contribute to:
+
+```text
+Tcllib
+Tk
+a Tcl-based tool
+documentation
+examples
+```
+
+Even small contributions teach you how real projects survive.
+
+---
+
+# Year 10: Mastery
+
+By year 10, expertise is not about knowing every command.
+
+It is about judgment.
+
+You can:
+
+```text
+design a plugin API
+debug unfamiliar Tcl quickly
+build UI without fighting Tk
+maintain a long-lived codebase
+write clear documentation
+teach others
+know when not to rewrite
+know when a hack is acceptable
+know when a design is rotten
+```
+
+Your project should reflect that.
+
+Possible year 10 outcomes:
+
+```text
+Tclme 2.x is stable
+You have a public repository
+You have written a Tclme plugin guide
+You have maintained it for years
+You can rebuild the core from memory
+You have strong opinions about editor architecture
+You can teach someone else how to extend it
+```
+
+That is expertise.
+
+---
+
+# 6. A weekly practice routine
+
+If you want a sustainable routine, do this:
+
+## Weekly loop
+
+### 1. Read
+
+30 minutes of official docs or source.
+
+Examples:
+
+```text
+man n dict
+man n text
+man n bind
+man n namespace
+```
+
+---
+
+### 2. Experiment
+
+Make a tiny script that proves the behavior.
+
+Example:
+
+```tcl
+puts [dict get [dict create a 1 b 2] b]
+```
+
+Do not assume. Verify.
+
+---
+
+### 3. Build
+
+Work on one real feature.
+
+Small. Shippable.
+
+---
+
+### 4. Break
+
+Try to make it fail.
+
+Questions:
+
+```text
+What if the buffer is killed?
+What if the file is missing?
+What if the plugin reloads?
+What if the text widget is disabled?
+What if the user cancels the prompt?
+```
+
+---
+
+### 5. Write
+
+Add one paragraph to your notebook or docs.
+
+If you cannot explain it simply, you do not understand it yet.
+
+---
+
+# 7. The “never use AI again” toolkit
+
+If you want to be self-sufficient, build these habits.
+
+## 1. Man-page first
+
+Before asking anyone, check:
+
+```text
+command name
+options
+return value
+errors
+examples
+```
+
+For Tcl, the official docs are excellent.
+
+---
+
+## 2. Minimal reproducible example
+
+When stuck, reduce the problem.
+
+Bad:
+
+```text
+My plugin does not work.
+```
+
+Good:
+
+```tcl
+package require Tk
+
+text .t
+pack .t
+
+.t insert end "hello"
+
+puts [.t get 1.0 end-1c]
+```
+
+If you can reduce the bug to 10 lines, you usually understand it.
+
+---
+
+## 3. Error catalogue
+
+Keep a file:
+
+```text
+docs/errors.md
+```
+
+Every recurring error gets an entry.
+
+This becomes your personal Stack Overflow.
+
+---
+
+## 4. Source notebook
+
+Keep:
+
+```text
+docs/notes.md
+```
+
+Write things like:
+
+```text
+Text widget end includes an implicit newline.
+Use end-1c for buffer contents.
+```
+
+and:
+
+```text
+Pack -before can reorder managed widgets.
+```
+
+and:
+
+```text
+Double-quoted strings perform command substitution.
+Use braces for regex.
+```
+
+These little notes compound.
+
+---
+
+## 5. Rubber duck debugging
+
+Explain the bug out loud.
+
+Seriously.
+
+Say:
+
+```text
+When I press C-x g, I expect project-grep to prompt.
+Instead, nothing happens.
+The command is defined here.
+The binding is here.
+The plugin load happens here.
+```
+
+Half the time, you find the bug while explaining it.
+
+---
+
+## 6. Human communities
+
+No AI does not mean no humans.
+
+Use:
+
+```text
+Tcl mailing lists
+Tcl/Tk forums
+comp.lang.tcl archives
+Tcler's Wiki
+Stack Overflow
+IRC/Libera channels
+```
+
+When you ask humans, bring:
+
+```text
+Tcl version
+OS
+minimal example
+exact error
+errorInfo
+what you expected
+what happened
+```
+
+People respect that.
+
+---
+
+# 8. What to avoid
+
+This matters.
+
+## Avoid endless rewriting
+
+Rewriting is useful once you have something to learn from.
+
+But if you rewrite every year without maintaining anything, you will never learn maintenance.
+
+Maintain one long-lived project.
+
+Tclme is a good candidate.
+
+---
+
+## Avoid plugin sprawl
+
+You already have many plugins.
+
+Now freeze some.
+
+Create:
+
+```text
+stable plugins
+experimental plugins
+retired plugins
+```
+
+Do not let everything stay half-finished forever.
+
+---
+
+## Avoid magical code you do not understand
+
+If you copy a clever trick, write a comment explaining it.
+
+If you cannot explain it, put it in a test file and poke it until you can.
+
+---
+
+## Avoid UI complexity without a model
+
+Before building a new panel, ask:
+
+```text
+Who owns the widget?
+Who destroys it?
+Who refreshes it?
+What happens on reload?
+What happens on theme change?
+```
+
+Otherwise you will build a haunted house.
+
+---
+
+# 9. The most important projects for the next decade
+
+If I had to pick the five most valuable projects for you, they would be:
+
+## 1. Rebuild Tclme Mini
+
+This gives you clarity.
+
+---
+
+## 2. Build a standalone Tk text-widget laboratory
+
+This gives you widget mastery.
+
+---
+
+## 3. Build a tiny plugin framework from scratch
+
+Not using your existing one.
+
+Make it small enough to understand completely.
+
+---
+
+## 4. Build a network tool
+
+IRC was a good start.
+
+Build something simpler from raw sockets too.
+
+Maybe:
+
+```text
+telnet client
+chat server
+HTTP fetcher
+```
+
+---
+
+## 5. Maintain Tclme for years
+
+This is the real teacher.
+
+Long-term maintenance teaches:
+
+```text
+compatibility
+refactoring
+documentation
+regression
+design debt
+user needs
+```
+
+---
+
+# 10. Signs you are becoming expert
+
+You will know you are getting good when:
+
+```text
+You can read an error message and immediately know the category of bug.
+You can inspect live state without fear.
+You can build a small UI in one sitting.
+You can explain how your plugin system works.
+You can reload plugins without breaking the editor.
+You can debug event-ordering problems.
+You can design a command API that other plugins can use.
+You can maintain code you wrote a year ago.
+You can say no to features.
+You can choose boring solutions on purpose.
+```
+
+That last one is important.
+
+Experts choose boring solutions when boring is correct.
+
+---
+
+# 11. If you only do three things from now on
+
+Do these.
+
+## 1. Document the system
+
+Write:
+
+```text
+ARCHITECTURE.md
+PLUGIN-COOKBOOK.md
+ERRORS.md
+```
+
+This turns chaos into knowledge.
+
+---
+
+## 2. Rebuild the core from scratch
+
+Build Tclme Mini.
+
+It will teach you more than ten plugins.
+
+---
+
+## 3. Maintain one project for years
+
+Do not abandon Tclme.
+
+Evolve it.
+
+Version it.
+
+Break it.
+
+Fix it.
+
+Refactor it.
+
+Document it.
+
+That is how expertise accumulates.
+
+---
+
+# Final summary
+
+What did we make?
+
+We made a **live, hackable Tcl/Tk programming environment** disguised as a text editor.
+
+It has:
+
+```text
+commands
+keybindings
+events
+buffers
+plugins
+themes
+debugging tools
+file navigation
+project search
+tiling
+IRC
+code outlines
+```
+
+But more importantly, you built a system you can study, break, extend, and rebuild.
+
+How do you become an expert without AI?
+
+You build a self-sufficient loop:
+
+```text
+read docs
+experiment
+build small
+break things
+write notes
+maintain long-term
+rewrite deliberately
+teach yourself by explaining
+```
+
+The next 10 years are not about memorizing Tcl.
+
+They are about becoming someone who can:
+
+```text
+understand systems,
+extend systems,
+repair systems,
+and design systems that survive.
+```
+
+# Plugin Guide
 Absolutely. I’ll teach you in the context of your Core editor, because that gives you a real plugin API, real UI, and immediate feedback. The goal is not just “make a plugin” — it’s to build the mental model that lets you write *any* plugin.
 
 ---
