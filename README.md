@@ -1,14 +1,10 @@
 # tclme
 TCL malleable environment
-Yes. Let’s back up.
 
-You did not just make “a few plugins.”
 
-You built a **small programmable software environment** in Tcl/Tk.
+A **small programmable software environment** in Tcl/Tk.
 
 It started as a text editor, but it became something closer to a personal computing substrate: a command loop, an event system, a buffer model, a plugin loader, a theme system, and a pile of extensions that change how the environment behaves.
-
-That is the kind of thing people build when they are trying to make their own tools instead of merely using other people’s tools.
 
 ---
 
