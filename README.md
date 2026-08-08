@@ -1,8 +1,6 @@
 # tclme
 TCL malleable environment
 
-```wish8.6 tclme.tcl```
-
 A **small programmable software environment** in Tcl/Tk.
 
 It started as a text editor, but it became something closer to a personal computing substrate: a command loop, an event system, a buffer model, a plugin loader, a theme system, and a pile of extensions that change how the environment behaves.
@@ -2103,11 +2101,11 @@ and design systems that survive.
 ```
 
 # Plugin Guide
-Absolutely. I’ll teach you in the context of your Core editor, because that gives you a real plugin API, real UI, and immediate feedback. The goal is not just “make a plugin” — it’s to build the mental model that lets you write *any* plugin.
+Absolutely. I’ll teach you in the context of your Tclme editor, because that gives you a real plugin API, real UI, and immediate feedback. The goal is not just “make a plugin” — it’s to build the mental model that lets you write *any* plugin.
 
 ---
 
-# 1. The mental model of a Core plugin
+# 1. The mental model of a Tclme plugin
 
 A plugin is just a Tcl file:
 
@@ -2115,10 +2113,10 @@ A plugin is just a Tcl file:
 plugins/myplugin.tcl
 ```
 
-Core loads it into its own namespace:
+Tclme loads it into its own namespace:
 
 ```tcl
-::Core::Plugin::myplugin
+::Tclme::Plugin::myplugin
 ```
 
 So if your plugin defines:
@@ -2132,29 +2130,29 @@ proc hello {} {
 the real proc name becomes:
 
 ```tcl
-::Core::Plugin::myplugin::hello
+::Tclme::Plugin::myplugin::hello
 ```
 
-You usually do not need to type that everywhere because Core tracks the current plugin owner and resolves your bare proc names when commands/hooks fire.
+You usually do not need to type that everywhere because Tclme tracks the current plugin owner and resolves your bare proc names when commands/hooks fire.
 
 A plugin usually does some combination of these:
 
 1. **Defines commands**
 
    ```tcl
-   Core::DefCommand my-command my-proc "Do something"
+   Tclme::DefCommand my-command my-proc "Do something"
    ```
 
 2. **Binds keys**
 
    ```tcl
-   Core::BindKey my-command <Control-x><Control-y>
+   Tclme::BindKey my-command <Control-x><Control-y>
    ```
 
 3. **Listens to events**
 
    ```tcl
-   Core::On after-save MyAfterSaveHandler
+   Tclme::On after-save MyAfterSaveHandler
    ```
 
 4. **Stores state**
@@ -2250,13 +2248,13 @@ foreach x $items {
 Important:
 
 ```tcl
-set cmd [list Core::SwitchToBuffer $bufname]
+set cmd [list Tclme::SwitchToBuffer $bufname]
 ```
 
 is safer than:
 
 ```tcl
-set cmd "Core::SwitchToBuffer $bufname"
+set cmd "Tclme::SwitchToBuffer $bufname"
 ```
 
 because `list` handles spaces and quoting correctly.
@@ -2308,7 +2306,7 @@ proc log-all {args} {
 log-all a b c
 ```
 
-This matters because Core events often pass arguments, and your callback can absorb them with `args`.
+This matters because Tclme events often pass arguments, and your callback can absorb them with `args`.
 
 ---
 
@@ -2341,11 +2339,11 @@ if {[catch {
 }
 ```
 
-In Core plugins, log errors like this:
+In Tclme plugins, log errors like this:
 
 ```tcl
 if {[catch { do-something } err]} {
-    Core::Log error "myplugin: $err"
+    Tclme::Log error "myplugin: $err"
 }
 ```
 
@@ -2369,7 +2367,7 @@ after 1000 { puts "one second later" }
 bind .mybutton <Button-1> { puts "left click" }
 ```
 
-Core’s editor buffers are Tk text widgets.
+Tclme’s editor buffers are Tk text widgets.
 
 For a buffer named `foo`, the widget path is usually:
 
@@ -2377,10 +2375,10 @@ For a buffer named `foo`, the widget path is usually:
 .ws.<widget-id>.txt
 ```
 
-You can get it from Core state:
+You can get it from Tclme state:
 
 ```tcl
-set info [dict get $::Core::buffers $buffer_name]
+set info [dict get $::Tclme::buffers $buffer_name]
 set wid  [dict get $info wid]
 set txt  ".ws.$wid.txt"
 ```
@@ -2408,7 +2406,7 @@ Paste this:
 ```tcl
 # plugins/wordcount.tcl
 # ============================================================================
-#  Word count plugin for Core.
+#  Word count plugin for Tclme.
 #
 #  Adds a word count to the status line.
 #  Toggle with :word-count or :wc.
@@ -2420,11 +2418,11 @@ variable enabled 1
 #  Helper: get the text widget for a buffer name
 # ----------------------------------------------------------------------------
 proc WidgetFor {buffer_name} {
-    if {![dict exists $::Core::buffers $buffer_name]} {
+    if {![dict exists $::Tclme::buffers $buffer_name]} {
         return ""
     }
 
-    set info [dict get $::Core::buffers $buffer_name]
+    set info [dict get $::Tclme::buffers $buffer_name]
     set wid  [dict get $info wid]
 
     return ".ws.$wid.txt"
@@ -2449,7 +2447,7 @@ proc CountWords {buffer_name} {
 # ----------------------------------------------------------------------------
 #  Status-line contribution
 #
-#  Core calls this with the current buffer name.
+#  Tclme calls this with the current buffer name.
 # ----------------------------------------------------------------------------
 proc OnStatus {buffer_name} {
     variable enabled
@@ -2458,7 +2456,7 @@ proc OnStatus {buffer_name} {
         return ""
     }
 
-    if {$buffer_name ne $::Core::current_buffer} {
+    if {$buffer_name ne $::Tclme::current_buffer} {
         return ""
     }
 
@@ -2475,12 +2473,12 @@ proc cmd-toggle {args} {
 
     set enabled [expr {!$enabled}]
 
-    ::Core::RefreshStatus
+    ::Tclme::RefreshStatus
 
     if {$enabled} {
-        ::Core::Message "Word count enabled"
+        ::Tclme::Message "Word count enabled"
     } else {
-        ::Core::Message "Word count disabled"
+        ::Tclme::Message "Word count disabled"
     }
 }
 
@@ -2488,10 +2486,10 @@ proc cmd-toggle {args} {
 #  Registration
 # ----------------------------------------------------------------------------
 
-Core::On status-line OnStatus
+Tclme::On status-line OnStatus
 
-Core::DefCommand word-count cmd-toggle "Toggle word count in status line"
-Core::DefAlias wc word-count
+Tclme::DefCommand word-count cmd-toggle "Toggle word count in status line"
+Tclme::DefAlias wc word-count
 ```
 
 Reload it:
@@ -2527,38 +2525,38 @@ variable enabled 1
 This lives in:
 
 ```tcl
-::Core::Plugin::wordcount::enabled
+::Tclme::Plugin::wordcount::enabled
 ```
 
 You can inspect it from the minibuffer:
 
 ```text
-:eval set ::Core::Plugin::wordcount::enabled
+:eval set ::Tclme::Plugin::wordcount::enabled
 ```
 
 ---
 
-## 4.2 Reading Core state
+## 4.2 Reading Tclme state
 
 We used:
 
 ```tcl
-$::Core::buffers
-$::Core::current_buffer
+$::Tclme::buffers
+$::Tclme::current_buffer
 ```
 
 Notice the leading `::`.
 
-Use fully qualified Core variables from plugins:
+Use fully qualified Tclme variables from plugins:
 
 ```tcl
-$::Core::buffers
+$::Tclme::buffers
 ```
 
 Not:
 
 ```tcl
-$Core::buffers
+$Tclme::buffers
 ```
 
 The second form can fail because it may be interpreted relative to your plugin namespace.
@@ -2568,10 +2566,10 @@ The second form can fail because it may be interpreted relative to your plugin n
 ## 4.3 Event hooks
 
 ```tcl
-Core::On status-line OnStatus
+Tclme::On status-line OnStatus
 ```
 
-`status-line` is a special event where Core collects strings from all listeners and joins them.
+`status-line` is a special event where Tclme collects strings from all listeners and joins them.
 
 That’s why returning:
 
@@ -2586,7 +2584,7 @@ makes it appear in the status bar.
 ## 4.4 Commands
 
 ```tcl
-Core::DefCommand word-count cmd-toggle "Toggle word count in status line"
+Tclme::DefCommand word-count cmd-toggle "Toggle word count in status line"
 ```
 
 This creates:
@@ -2603,13 +2601,13 @@ proc cmd-toggle {args} {
 }
 ```
 
-Core’s ex-command parser often passes the remainder as one string, so using `args` is defensive.
+Tclme’s ex-command parser often passes the remainder as one string, so using `args` is defensive.
 
 ---
 
-# 5. Learn the Core event model
+# 5. Learn the Tclme event model
 
-Core has three important hook styles.
+Tclme has three important hook styles.
 
 ## 5.1 Fire-and-forget events
 
@@ -2631,11 +2629,11 @@ editor-started
 You register like:
 
 ```tcl
-Core::On after-save OnAfterSave
+Tclme::On after-save OnAfterSave
 
 proc OnAfterSave {args} {
     set path [lindex $args 0]
-    Core::Message "Saved: $path"
+    Tclme::Message "Saved: $path"
 }
 ```
 
@@ -2671,7 +2669,7 @@ proc BeforeSave {path} {
     return ""
 }
 
-Core::On before-save BeforeSave
+Tclme::On before-save BeforeSave
 ```
 
 Reload:
@@ -2711,7 +2709,7 @@ proc StatusTime {args} {
     return [clock format [clock seconds] -format {%H:%M}]
 }
 
-Core::On status-line StatusTime
+Tclme::On status-line StatusTime
 ```
 
 That would add the current time to the status line.
@@ -2740,7 +2738,7 @@ variable enabled 1
 # ---------------------------------------------------------------------------
 
 proc CurrentWidget {} {
-    set w $::Core::active_widget
+    set w $::Tclme::active_widget
 
     if {$w eq "" || ![winfo exists $w]} {
         return ""
@@ -2759,9 +2757,9 @@ proc cmd-toggle {args} {
     set enabled [expr {!$enabled}]
 
     if {$enabled} {
-        ::Core::Message "Plugin enabled"
+        ::Tclme::Message "Plugin enabled"
     } else {
-        ::Core::Message "Plugin disabled"
+        ::Tclme::Message "Plugin disabled"
     }
 }
 
@@ -2806,63 +2804,63 @@ proc restore-state {saved} {
 # Registration
 # ---------------------------------------------------------------------------
 
-Core::On buffer-switched OnBufferSwitched
-Core::On after-save      OnAfterSave
+Tclme::On buffer-switched OnBufferSwitched
+Tclme::On after-save      OnAfterSave
 
-Core::DefCommand skeleton cmd-toggle "Toggle skeleton plugin"
-Core::DefAlias sk skeleton
+Tclme::DefCommand skeleton cmd-toggle "Toggle skeleton plugin"
+Tclme::DefAlias sk skeleton
 ```
 
 ---
 
-# 7. The most useful Core APIs to memorize
+# 7. The most useful Tclme APIs to memorize
 
 ## Commands
 
 ```tcl
-Core::DefCommand name script "documentation"
-Core::DefAlias short full
-Core::BindKey command-name "<Control-x><Control-y>"
+Tclme::DefCommand name script "documentation"
+Tclme::DefAlias short full
+Tclme::BindKey command-name "<Control-x><Control-y>"
 ```
 
 ## Messages
 
 ```tcl
-Core::Message "Temporary minibuffer message"
-Core::Note "Status-line note that does not clobber prompts"
-Core::Log error "Something failed"
+Tclme::Message "Temporary minibuffer message"
+Tclme::Note "Status-line note that does not clobber prompts"
+Tclme::Log error "Something failed"
 ```
 
 ## Status
 
 ```tcl
-Core::RefreshStatus
-Core::UpdateStatus "temporary status text"
+Tclme::RefreshStatus
+Tclme::UpdateStatus "temporary status text"
 ```
 
 ## Events
 
 ```tcl
-Core::On event-name handler-proc
+Tclme::On event-name handler-proc
 ```
 
 ## Prompting
 
 ```tcl
-Core::Prompt "Label: " MyCallback
+Tclme::Prompt "Label: " MyCallback
 
 proc MyCallback {input} {
-    Core::Message "You typed: $input"
+    Tclme::Message "You typed: $input"
 }
 ```
 
 ## Buffers
 
 ```tcl
-$::Core::buffers
-$::Core::buffer_order
-$::Core::current_buffer
-$::Core::active_widget
+$::Tclme::buffers
+$::Tclme::buffer_order
+$::Tclme::current_buffer
+$::Tclme::active_widget
 ```
 
 ---
@@ -2873,7 +2871,7 @@ This is where you level up.
 
 ## 8.1 Run wish from a terminal
 
-If you launch Core from a terminal, `puts` output is visible:
+If you launch Tclme from a terminal, `puts` output is visible:
 
 ```tcl
 puts "debug: reached here"
@@ -2884,7 +2882,7 @@ puts stderr "error details here"
 
 ## 8.2 Use `:log`
 
-Core logs errors.
+Tclme logs errors.
 
 ```text
 :log
@@ -2897,11 +2895,11 @@ Core logs errors.
 Examples:
 
 ```text
-:eval dict keys $::Core::buffers
-:eval dict get $::Core::buffers scratch
-:eval set ::Core::current_buffer
-:eval info commands ::Core::Plugin::wordcount::*
-:eval set ::Core::Plugin::wordcount::enabled
+:eval dict keys $::Tclme::buffers
+:eval dict get $::Tclme::buffers scratch
+:eval set ::Tclme::current_buffer
+:eval info commands ::Tclme::Plugin::wordcount::*
+:eval set ::Tclme::Plugin::wordcount::enabled
 ```
 
 This is the fastest way to understand what is happening.
@@ -2911,7 +2909,7 @@ This is the fastest way to understand what is happening.
 ## 8.4 Inspect available commands
 
 ```text
-:eval dict keys $::Core::commands
+:eval dict keys $::Tclme::commands
 ```
 
 Or:
@@ -2936,7 +2934,7 @@ Do this while learning:
 if {[catch {
     set data [read-some-file $path]
 } err]} {
-    Core::Log error "myplugin read failed: $err"
+    Tclme::Log error "myplugin read failed: $err"
     return
 }
 ```
@@ -2947,7 +2945,7 @@ For deeper debugging:
 if {[catch {
     do-dangerous-thing
 } err]} {
-    Core::Log error "myplugin: $err"
+    Tclme::Log error "myplugin: $err"
     puts stderr $::errorInfo
 }
 ```
@@ -3108,7 +3106,7 @@ proc Schedule {} {
 
 proc Tick {} {
     # Do work here.
-    Core::Message "Autosave tick"
+    Tclme::Message "Autosave tick"
 
     # Reschedule.
     Schedule
@@ -3143,7 +3141,7 @@ proc Show {} {
         return
     }
 
-    frame .myplugin -bg [::Core::GetTheme bg]
+    frame .myplugin -bg [::Tclme::GetTheme bg]
 
     label .myplugin.label -text "My Plugin"
 
@@ -3167,7 +3165,7 @@ Rules:
 
 1. Check `winfo exists`.
 2. Use theme colors.
-3. Pack relative to Core widgets carefully.
+3. Pack relative to Tclme widgets carefully.
 4. Destroy UI in `unload`.
 
 Your buffer bar plugin follows exactly this pattern.
@@ -3176,7 +3174,7 @@ Your buffer bar plugin follows exactly this pattern.
 
 # 12. Text-widget skills you should learn
 
-Since Core is a text editor, becoming strong with the Tk `text` widget is a superpower.
+Since Tclme is a text editor, becoming strong with the Tk `text` widget is a superpower.
 
 Important concepts:
 
@@ -3267,8 +3265,8 @@ Hello from my plugin
 
 Skills:
 
-- `Core::DefCommand`
-- `Core::Message`
+- `Tclme::DefCommand`
+- `Tclme::Message`
 
 ---
 
@@ -3304,14 +3302,14 @@ Try this:
 
 ```tcl
 proc cmd-insert-date {args} {
-    set w $::Core::active_widget
+    set w $::Tclme::active_widget
 
     if {$w eq "" || ![winfo exists $w]} {
         return
     }
 
     if {[$w cget -state] eq "disabled"} {
-        ::Core::Message "Buffer is read-only"
+        ::Tclme::Message "Buffer is read-only"
         return
     }
 
@@ -3319,10 +3317,10 @@ proc cmd-insert-date {args} {
 
     $w insert insert $stamp
     $w edit modified 1
-    ::Core::RefreshStatus
+    ::Tclme::RefreshStatus
 }
 
-Core::DefCommand insert-date cmd-insert-date "Insert current date/time at cursor"
+Tclme::DefCommand insert-date cmd-insert-date "Insert current date/time at cursor"
 ```
 
 ---
@@ -3360,7 +3358,7 @@ Skills:
 Hint:
 
 ```tcl
-dict for {name info} $::Core::buffers {
+dict for {name info} $::Tclme::buffers {
     set txt ".ws.[dict get $info wid].txt"
 
     if {[winfo exists $txt] && [$txt edit modified]} {
@@ -3400,7 +3398,7 @@ prompts and switches to a matching buffer.
 
 Skills:
 
-- `Core::Prompt`
+- `Tclme::Prompt`
 - completion
 - filtering
 - buffer switching
@@ -3460,7 +3458,7 @@ This is basically Dired-lite.
 
 If you want to become truly expert, study these deliberately.
 
-## Core language
+## Tclme language
 
 - `string`
 - `list`
@@ -3528,13 +3526,13 @@ The difference between “I can write Tcl” and “I am good at Tcl” is mostl
 Prefer:
 
 ```tcl
-set cmd [list ::Core::OpenFile $path]
+set cmd [list ::Tclme::OpenFile $path]
 ```
 
 over:
 
 ```tcl
-set cmd "::Core::OpenFile $path"
+set cmd "::Tclme::OpenFile $path"
 ```
 
 Lists prevent quoting bugs.
@@ -3594,7 +3592,7 @@ Ask:
 - Did I create widgets?
 - Did I bind events?
 - Did I start timers?
-- Did I modify Core state?
+- Did I modify Tclme state?
 - Did I change widget options?
 - Did I add tags?
 - Did I open files or channels?
@@ -3745,7 +3743,7 @@ Or use online Tcl/Tk docs.
 
 # 20. What “expert” actually looks like
 
-An expert Tcl programmer in your Core environment can:
+An expert Tcl programmer in your Tclme environment can:
 
 1. Look at an error and know whether it is:
    - syntax
@@ -3760,7 +3758,7 @@ An expert Tcl programmer in your Core environment can:
    - reload cleanly
    - unload cleanly
    - do not leak timers or widgets
-   - do not corrupt Core state
+   - do not corrupt Tclme state
 
 3. Use the event system naturally:
    - fire-and-forget
@@ -3801,4 +3799,5 @@ That last one is the most important.
 
 You become expert fastest when you build the thing you actually want.
 
-If you want, next I can turn this into a structured mini-course: **Lesson 1: your first five Core plugins**, with exercises, expected output, and solutions.
+If you want, next I can turn this into a structured mini-course: **Lesson 1: your first five Tclme plugins**, with exercises, expected output, and solutions.
+
