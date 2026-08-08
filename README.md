@@ -1,6 +1,7 @@
 # tclme
 TCL malleable environment
 
+```wish8.6 tclme.tcl```
 
 A **small programmable software environment** in Tcl/Tk.
 
