@@ -1,6 +1,6 @@
 Below is a detailed `ARCHITECTURE.md` you can save in the repository and use as a study document.
 
-```md
+
 # Tclme Architecture
 
 This document describes the architecture of Tclme, a small, hackable, event-driven text editor written in Tcl/Tk.
