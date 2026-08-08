@@ -16,8 +16,9 @@
 #    r            rename entry under cursor
 #    +            create directory
 #    y            copy full path to clipboard
+#    C            copy marked/current item
+#    M            move marked/current item
 #    h            show help
-#
 #  Open with C-x d, or :dired /some/path
 # ============================================================================
 
@@ -202,7 +203,7 @@ proc SetupBindings {bufname} {
     set txt [Widget $bufname]
     set ns  [namespace current]
 
-    foreach seq {<Return> q g u n p m U x r d s y h
+    foreach seq {<Return> q g u n p m U x r d s y h C M
                  <period> <plus> <KP_Add> <ButtonRelease-1> <KeyRelease>} {
         catch { bind $txt $seq {} }
     }
@@ -221,6 +222,8 @@ proc SetupBindings {bufname} {
     bind $txt s                 [list ${ns}::CycleSort    $bufname]
     bind $txt y                 [list ${ns}::CopyPath     $bufname]
     bind $txt h                 [list ${ns}::ShowHelp     $bufname]
+    bind $txt C                 [list ${ns}::CopyMarked   $bufname]
+    bind $txt M                 [list ${ns}::MoveMarked   $bufname]
     bind $txt <period>          [list ${ns}::ToggleHidden $bufname]
     bind $txt <plus>            [list ${ns}::Mkdir        $bufname]
     bind $txt <KP_Add>          [list ${ns}::Mkdir        $bufname]
@@ -488,6 +491,436 @@ proc DoMkdir {bufname name} {
     }
 }
 
+# ----------------------------------------------------------------------------
+#  Copy / move support
+# ----------------------------------------------------------------------------
+
+proc SelectedNames {bufname} {
+    variable state
+
+    if {![dict exists $state $bufname]} {
+        return {}
+    }
+
+    set s [dict get $state $bufname]
+    set marked [dict get $s marked]
+    set names [dict keys $marked]
+
+    if {[llength $names] > 0} {
+        return $names
+    }
+
+    set txt [Widget $bufname]
+    set entries [dict get $s entries]
+    set idx [EntryIndex $txt]
+
+    if {$idx >= 0 && $idx < [llength $entries]} {
+        return [list [lindex $entries $idx]]
+    }
+
+    return {}
+}
+
+proc ResolveTargetPath {target dir} {
+    set target [string trim $target]
+
+    if {$target eq ""} {
+        return ""
+    }
+
+    # Expand ~ immediately.
+    if {[string index $target 0] eq "~"} {
+        return [file normalize $target]
+    }
+
+    # Relative paths are interpreted relative to the dired directory.
+    if {[file pathtype $target] ne "absolute"} {
+        set target [file join $dir $target]
+    }
+
+    return [file normalize $target]
+}
+
+proc ListDirectoryAll {dir} {
+    set out {}
+
+    if {[catch {glob -nocomplain -directory $dir -tails *} plain]} {
+        set plain {}
+    }
+
+    if {[catch {glob -nocomplain -directory $dir -tails .*} hidden]} {
+        set hidden {}
+    }
+
+    foreach f $plain {
+        lappend out $f
+    }
+
+    foreach f $hidden {
+        if {$f ne "." && $f ne ".."} {
+            lappend out $f
+        }
+    }
+
+    return [lsort -unique $out]
+}
+
+proc IsSubPath {parent child} {
+    set parent [file normalize $parent]
+    set child  [file normalize $child]
+
+    set p [file split $parent]
+    set c [file split $child]
+
+    if {[llength $c] < [llength $p]} {
+        return 0
+    }
+
+    foreach px $p cx $c {
+        if {$px ne $cx} {
+            return 0
+        }
+    }
+
+    return 1
+}
+
+proc ResolveDestination {src dest} {
+    # If destination is an existing directory, copy/move into it.
+    if {[file isdirectory $dest]} {
+        return [file join $dest [file tail $src]]
+    }
+
+    return $dest
+}
+
+proc ConfirmOverwrite {dest} {
+    if {![file exists $dest]} {
+        return 1
+    }
+
+    set kind [expr {[file isdirectory $dest] ? "directory" : "file"}]
+    set msg "Destination $kind exists:\n\n$dest\n\nOverwrite / merge into it?"
+
+    if {[catch {
+        tk_messageBox -type yesno -icon warning -title "Dired" -message $msg
+    } ans]} {
+        Tclme::Message "Destination exists: $dest"
+        return 0
+    }
+
+    return [expr {$ans eq "yes"}]
+}
+
+proc CopyDirectoryRecursive {src dest} {
+    set src  [file normalize $src]
+    set dest [file normalize $dest]
+
+    if {[IsSubPath $src $dest]} {
+        error "cannot copy directory into itself"
+    }
+
+    file mkdir $dest
+
+    foreach name [ListDirectoryAll $src] {
+        set s [file join $src $name]
+        set d [file join $dest $name]
+
+        set type ""
+        catch { set type [file type $s] }
+
+        # Try to preserve symlinks as links.
+        if {$type eq "link"} {
+            if {[catch {
+                set target [file link $s]
+
+                if {[file pathtype $target] ne "absolute"} {
+                    set target [file normalize [file join [file dirname $s] $target]]
+                }
+
+                file link -symbolic $d $target
+            }]} {
+                # Fallback: copy whatever the link points to, if possible.
+                catch { file copy -force $s $d }
+            }
+            continue
+        }
+
+        if {$type eq "directory" || [file isdirectory $s]} {
+            CopyDirectoryRecursive $s $d
+        } else {
+            file copy -force $s $d
+        }
+    }
+}
+
+proc CopyEntry {src dest} {
+    set src   [file normalize $src]
+    set dest  [file normalize $dest]
+    set final [ResolveDestination $src $dest]
+
+    if {[file normalize $final] eq $src} {
+        return 1
+    }
+
+    if {[file exists $final]} {
+        if {[file isdirectory $src] && ![file isdirectory $final]} {
+            error "cannot copy directory over a file"
+        }
+
+        if {[file isfile $src] && [file isdirectory $final]} {
+            error "cannot overwrite a directory with a file"
+        }
+
+        if {![ConfirmOverwrite $final]} {
+            return 0
+        }
+    }
+
+    if {[file isdirectory $src]} {
+        if {[IsSubPath $src $final]} {
+            error "cannot copy directory into itself"
+        }
+
+        CopyDirectoryRecursive $src $final
+    } else {
+        if {[file isdirectory $final]} {
+            error "destination is a directory"
+        }
+
+        file mkdir [file dirname $final]
+        file copy -force $src $final
+    }
+
+    return 1
+}
+
+proc MoveEntry {src dest} {
+    set src   [file normalize $src]
+    set dest  [file normalize $dest]
+    set final [ResolveDestination $src $dest]
+
+    if {[file normalize $final] eq $src} {
+        return 1
+    }
+
+    if {[file exists $final]} {
+        if {[file isdirectory $src] && ![file isdirectory $final]} {
+            error "cannot move directory over a file"
+        }
+
+        if {[file isfile $src] && [file isdirectory $final]} {
+            error "cannot overwrite a directory with a file"
+        }
+
+        if {![ConfirmOverwrite $final]} {
+            return 0
+        }
+    }
+
+    if {[file isdirectory $src] && [IsSubPath $src $final]} {
+        error "cannot move directory into itself"
+    }
+
+    # Preferred fast path.
+    if {![catch {file rename $src $final}]} {
+        return 1
+    }
+
+    # Fallback, useful across filesystems or when rename is not allowed.
+    if {[file isdirectory $src]} {
+        if {[file exists $final] && ![file isdirectory $final]} {
+            error "destination exists and is not a directory"
+        }
+
+        CopyDirectoryRecursive $src $final
+    } else {
+        if {[file isdirectory $final]} {
+            error "destination is a directory"
+        }
+
+        file mkdir [file dirname $final]
+        file copy -force $src $final
+    }
+
+    file delete -force $src
+    return 1
+}
+
+proc CopyMarked {bufname} {
+    set names [SelectedNames $bufname]
+
+    if {[llength $names] == 0} {
+        Tclme::Message "No marked or current item"
+        return -code break
+    }
+
+    if {[llength $names] == 1} {
+        set prompt "copy [lindex $names 0] to: "
+    } else {
+        set prompt "copy [llength $names] items to: "
+    }
+
+    Tclme::Prompt $prompt [list [namespace current]::DoCopy $bufname $names]
+    return -code break
+}
+
+proc MoveMarked {bufname} {
+    set names [SelectedNames $bufname]
+
+    if {[llength $names] == 0} {
+        Tclme::Message "No marked or current item"
+        return -code break
+    }
+
+    if {[llength $names] == 1} {
+        set prompt "move [lindex $names 0] to: "
+    } else {
+        set prompt "move [llength $names] items to: "
+    }
+
+    Tclme::Prompt $prompt [list [namespace current]::DoMove $bufname $names]
+    return -code break
+}
+
+proc DoCopy {bufname names target} {
+    variable state
+
+    if {![dict exists $state $bufname]} {
+        return
+    }
+
+    set dir [dict get [dict get $state $bufname] dir]
+    set target [ResolveTargetPath $target $dir]
+
+    if {$target eq ""} {
+        return
+    }
+
+    # Single item: target may be a directory or a new name.
+    if {[llength $names] == 1} {
+        set name [lindex $names 0]
+        set src [file join $dir $name]
+
+        if {[catch {set ok [CopyEntry $src $target]} err]} {
+            Tclme::Message "copy failed: $err"
+            return
+        }
+
+        if {$ok} {
+            Tclme::Message "Copied $name -> $target"
+            Refresh $bufname
+        } else {
+            Tclme::Message "Copy cancelled"
+        }
+
+        return
+    }
+
+    # Multiple items: target must be a directory.
+    if {[file exists $target] && ![file isdirectory $target]} {
+        Tclme::Message "Target is not a directory: $target"
+        return
+    }
+
+    if {![file exists $target]} {
+        if {[catch {file mkdir $target} err]} {
+            Tclme::Message "cannot create target directory: $err"
+            return
+        }
+    }
+
+    set count 0
+
+    foreach name $names {
+        if {[catch {set ok [CopyEntry [file join $dir $name] $target]} err]} {
+            Tclme::Message "copy $name failed: $err"
+            continue
+        }
+
+        if {$ok} {
+            incr count
+        }
+    }
+
+    if {$count > 0} {
+        Tclme::Message "Copied $count item(s) to $target"
+        Refresh $bufname
+    } else {
+        Tclme::Message "No items copied"
+    }
+}
+
+proc DoMove {bufname names target} {
+    variable state
+
+    if {![dict exists $state $bufname]} {
+        return
+    }
+
+    set dir [dict get [dict get $state $bufname] dir]
+    set target [ResolveTargetPath $target $dir]
+
+    if {$target eq ""} {
+        return
+    }
+
+    # Single item: target may be a directory or a new name.
+    if {[llength $names] == 1} {
+        set name [lindex $names 0]
+        set src [file join $dir $name]
+
+        if {[catch {set ok [MoveEntry $src $target]} err]} {
+            Tclme::Message "move failed: $err"
+            return
+        }
+
+        if {$ok} {
+            dict set state $bufname marked [dict create]
+            Tclme::Message "Moved $name -> $target"
+            Refresh $bufname
+        } else {
+            Tclme::Message "Move cancelled"
+        }
+
+        return
+    }
+
+    # Multiple items: target must be a directory.
+    if {[file exists $target] && ![file isdirectory $target]} {
+        Tclme::Message "Target is not a directory: $target"
+        return
+    }
+
+    if {![file exists $target]} {
+        if {[catch {file mkdir $target} err]} {
+            Tclme::Message "cannot create target directory: $err"
+            return
+        }
+    }
+
+    set count 0
+
+    foreach name $names {
+        if {[catch {set ok [MoveEntry [file join $dir $name] $target]} err]} {
+            Tclme::Message "move $name failed: $err"
+            continue
+        }
+
+        if {$ok} {
+            incr count
+        }
+    }
+
+    if {$count > 0} {
+        dict set state $bufname marked [dict create]
+        Tclme::Message "Moved $count item(s) to $target"
+        Refresh $bufname
+    } else {
+        Tclme::Message "No items moved"
+    }
+}
+
 proc CopyPath {bufname} {
     variable state
     set txt     [Widget $bufname]
@@ -506,23 +939,25 @@ proc CopyPath {bufname} {
 }
 
 proc ShowHelp {bufname} {
-    set lines {
-        "Dired keybindings" ""
-        "n / p        next / previous line"
-        "Return       open file, or enter directory"
-        "u            up to parent directory"
-        "g            refresh listing"
-        "q            quit (kill this dired buffer)"
-        ".            toggle hidden files"
-        "s            cycle sort: name -> size -> mtime"
-        "d            toggle detailed listing"
-        "m / U        mark / unmark line"
-        "x            delete marked items"
-        "r            rename entry under cursor"
-        "+            create directory"
-        "y            copy full path to clipboard"
-        "h            show this help"
-    }
+    set lines [list \
+        "Dired keybindings" "" \
+        "n / p        next / previous line" \
+        "Return       open file, or enter directory" \
+        "u            up to parent directory" \
+        "g            refresh listing" \
+        "q            quit (kill this dired buffer)" \
+        ".            toggle hidden files" \
+        "s            cycle sort: name -> size -> mtime" \
+        "d            toggle detailed listing" \
+        "m / U        mark / unmark line" \
+        "x            delete marked items" \
+        "r            rename entry under cursor" \
+        "+            create directory" \
+        "y            copy full path to clipboard" \
+        "C            copy marked/current item" \
+        "M            move marked/current item" \
+        "h            show this help"]
+
     Tclme::ShowInBuffer "*Dired Help*" [join $lines \n] 1
     return -code break
 }
@@ -559,8 +994,11 @@ proc load {} {
 
 proc unload {} {
     foreach b [DiredBuffers] {
-        if {[catch {Widget $b} txt]} continue
-        foreach seq {<Return> q g u n p m U x r d s y h
+        if {[catch {Widget $b} txt]} {
+            continue
+        }
+
+        foreach seq {<Return> q g u n p m U x r d s y h C M
                      <period> <plus> <KP_Add> <ButtonRelease-1> <KeyRelease>} {
             catch { bind $txt $seq {} }
         }
@@ -569,6 +1007,40 @@ proc unload {} {
 
 proc save-state {}  { variable state; return $state }
 proc restore-state {s} { variable state; set state $s }
+
+proc cmd-dired-copy {args} {
+    set buf $::Tclme::current_buffer
+
+    if {[string match "dired:*" $buf]} {
+        catch { CopyMarked $buf }
+    } else {
+        Tclme::Message "Not a dired buffer"
+    }
+}
+
+proc cmd-dired-move {args} {
+    set buf $::Tclme::current_buffer
+
+    if {[string match "dired:*" $buf]} {
+        catch { MoveMarked $buf }
+    } else {
+        Tclme::Message "Not a dired buffer"
+    }
+}
+
+if {[info commands Tclme::DefCommand] ne ""} {
+    catch {
+        Tclme::DefCommand dired-copy \
+            [namespace current]::cmd-dired-copy \
+            "Copy marked/current Dired entry"
+    }
+
+    catch {
+        Tclme::DefCommand dired-move \
+            [namespace current]::cmd-dired-move \
+            "Move marked/current Dired entry"
+    }
+}
 
 # ----------------------------------------------------------------------------
 #  Registration
