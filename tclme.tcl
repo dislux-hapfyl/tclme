@@ -764,6 +764,28 @@ proc Tclme::SwitchToBuffer {name} {
     Tclme::Emit cursor-moved
 }
 
+proc Tclme::WidgetForBuffer {name} {
+    variable buffers
+
+    if {![dict exists $buffers $name]} {
+        return ""
+    }
+
+    set info [dict get $buffers $name]
+
+    if {![dict exists $info wid]} {
+        return ""
+    }
+
+    set w ".ws.[dict get $info wid].txt"
+
+    if {[winfo exists $w]} {
+        return $w
+    }
+
+    return ""
+}
+
 proc Tclme::CreateBufferWidget {name wid} {
     set container ".ws.$wid"
     set txt "$container.txt"
@@ -1452,46 +1474,110 @@ proc Tclme::RunAfter {script} {
     }
 }
 
-proc Tclme::LoadPlugin {name file} {
+proc Tclme::LoadPlugin {name file {saved ""}} {
     variable plugin_meta
     variable _owner
 
-    if {![file exists $file]} {
-        Tclme::Log error "plugin '$name': missing file $file"
-        return
+    # If the plugin is already loaded, unload it first.
+    if {[dict exists $plugin_meta $name]} {
+        Tclme::UnloadPlugin $name
     }
 
+    if {![file exists $file]} {
+        Tclme::Log error "plugin '$name': missing file $file"
+        return 0
+    }
+
+    set ns [Tclme::PluginNamespace $name]
+
+    # Create fresh plugin metadata.
     dict set plugin_meta $name [dict create \
-        file $file \
-        commands {} \
-        binds {} \
-        hooks {} \
-        afters {} \
-        aliases {} \
+        file     $file     \
+        commands {}        \
+        aliases  {}        \
+        binds    {}        \
+        hooks    {}        \
+        afters   {}        \
     ]
 
-    set ns "::Tclme::Plugin::$name"
-
+    # Create a fresh namespace.
     catch { namespace delete $ns }
     namespace eval $ns {}
 
+    # Source the plugin file.
     set _owner $name
-    set rc [catch { namespace eval $ns [list source $file] } err]
+    set rc [catch {
+        namespace eval $ns [list source $file]
+    } err]
     set _owner ""
 
     if {$rc} {
         Tclme::Log error "loading plugin '$name': $err"
-        Tclme::UnloadPlugin $name
-        return
+        catch { Tclme::UnloadPlugin $name }
+        return 0
     }
 
-    if {[info commands ${ns}::load] ne ""} {
-        if {[catch { ${ns}::load } err]} {
-            Tclme::Log error "plugin '$name' load: $err"
+    # Decide whether this plugin uses the new lifecycle.
+    set has_init [expr {[info commands ${ns}::init] ne ""}]
+
+    if {$has_init} {
+        # New lifecycle:
+        #
+        #   restore before init
+        #
+        # This allows init to inspect restored state.
+
+        if {$saved ne ""} {
+            if {[catch {
+                Tclme::PluginCallFirst $ns [list restore restore-state] $saved
+            } err]} {
+                Tclme::Log error "plugin '$name' restore failed: $err"
+            }
+        }
+
+        set _owner $name
+        set rc [catch {
+            Tclme::PluginCallFirst $ns [list init]
+        } err]
+        set _owner ""
+
+        if {$rc} {
+            Tclme::Log error "plugin '$name' init failed: $err"
+            catch { Tclme::UnloadPlugin $name }
+            return 0
+        }
+    } else {
+        # Legacy lifecycle:
+        #
+        #   load first
+        #   restore-state after load
+        #
+        # This preserves the behavior older plugins may depend on.
+
+        set _owner $name
+        set rc [catch {
+            Tclme::PluginCallFirst $ns [list load]
+        } err]
+        set _owner ""
+
+        if {$rc} {
+            Tclme::Log error "plugin '$name' load failed: $err"
+            catch { Tclme::UnloadPlugin $name }
+            return 0
+        }
+
+        if {$saved ne ""} {
+            if {[catch {
+                Tclme::PluginCallFirst $ns [list restore-state restore] $saved
+            } err]} {
+                Tclme::Log error "plugin '$name' restore-state failed: $err"
+            }
         }
     }
 
     Tclme::Emit plugin-loaded $name
+
+    return 1
 }
 
 proc Tclme::UnloadPlugin {name} {
@@ -1503,42 +1589,104 @@ proc Tclme::UnloadPlugin {name} {
         return
     }
 
-    set ns "::Tclme::Plugin::$name"
+    set ns [Tclme::PluginNamespace $name]
 
-    if {[info commands ${ns}::unload] ne ""} {
-        catch { ${ns}::unload }
+    # Give the plugin a chance to clean up.
+    #
+    # cleanup is preferred.
+    # unload is the legacy fallback.
+    #
+    # Errors are logged, but unload continues.
+
+    if {[catch {
+        Tclme::PluginCallFirst $ns [list cleanup unload]
+    } err]} {
+        Tclme::Log error "plugin '$name' cleanup failed: $err"
     }
 
     set meta [dict get $plugin_meta $name]
 
+    # Remove commands.
     foreach cmd [dict get $meta commands] {
         catch { dict unset commands $cmd }
     }
 
-    foreach a [dict get $meta aliases] {
-        catch { dict unset aliases $a }
+    # Remove aliases.
+    foreach alias [dict get $meta aliases] {
+        catch { dict unset aliases $alias }
     }
 
+    # Remove bindings.
     foreach entry [dict get $meta binds] {
         lassign $entry tag keys
+
         catch { bind $tag $keys {} }
     }
 
+    # Remove event hooks.
     foreach entry [dict get $meta hooks] {
         lassign $entry event cb
-        Tclme::Off $event $cb
+
+        catch { Tclme::Off $event $cb }
     }
 
+    # Cancel tracked after callbacks.
     if {[dict exists $meta afters]} {
         foreach id [dict get $meta afters] {
             catch { after cancel $id }
         }
     }
 
+    # Delete the plugin namespace.
     catch { namespace delete $ns }
+
+    # Remove metadata.
     dict unset plugin_meta $name
 
     Tclme::Emit plugin-unloaded $name
+}
+# ----------------------------------------------------------------------------
+# Plugin lifecycle helpers
+# ----------------------------------------------------------------------------
+
+proc Tclme::PluginNamespace {name} {
+    return "::Tclme::Plugin::$name"
+}
+
+# Call the first existing proc from a list of candidate names.
+#
+# Example:
+#   Tclme::PluginCallFirst $ns [list init load]
+#
+# If init exists, call init.
+# Otherwise, if load exists, call load.
+# Otherwise do nothing.
+
+proc Tclme::PluginCallFirst {ns proclist args} {
+    foreach procname $proclist {
+        set cmd ${ns}::$procname
+
+        if {[info commands $cmd] ne ""} {
+            return [uplevel #0 [list $cmd {*}$args]]
+        }
+    }
+
+    return {}
+}
+
+# Save plugin state using the new `state` hook if present,
+# otherwise the old `save-state` hook.
+
+proc Tclme::PluginSaveState {name} {
+    set ns [Tclme::PluginNamespace $name]
+
+    set saved ""
+
+    catch {
+        set saved [Tclme::PluginCallFirst $ns [list state save-state]]
+    }
+
+    return $saved
 }
 
 proc Tclme::ReloadPlugin {name {quiet 0}} {
@@ -1550,23 +1698,39 @@ proc Tclme::ReloadPlugin {name {quiet 0}} {
     }
 
     set file [dict get [dict get $plugin_meta $name] file]
-    set ns "::Tclme::Plugin::$name"
 
-    set saved ""
-    if {[info commands ${ns}::save-state] ne ""} {
-        catch { set saved [${ns}::save-state] }
-    }
+    # Save state before unloading.
+    set saved [Tclme::PluginSaveState $name]
 
+    # Unload and load again.
     Tclme::UnloadPlugin $name
-    Tclme::LoadPlugin $name $file
-
-    if {[dict exists $plugin_meta $name] && $saved ne "" && [info commands ${ns}::restore-state] ne ""} {
-        catch { ${ns}::restore-state $saved }
-    }
+    Tclme::LoadPlugin $name $file $saved
 
     if {!$quiet} {
         Tclme::Message "Reloaded plugin: $name"
     }
+}
+
+proc Tclme::PluginAfter {ms script} {
+    variable _owner
+    variable plugin_meta
+
+    set owner $_owner
+
+    if {$owner eq ""} {
+        # If called from plugin code outside load/init, try to infer owner.
+        if {[info commands Tclme::NamespaceOwner] ne ""} {
+            set owner [Tclme::NamespaceOwner [uplevel 1 {namespace current}]]
+        }
+    }
+
+    set id [after $ms $script]
+
+    if {$owner ne "" && [dict exists $plugin_meta $owner]} {
+        dict lappend plugin_meta $owner afters $id
+    }
+
+    return $id
 }
 
 proc Tclme::ReloadPlugins {{name ""}} {
