@@ -6,6 +6,7 @@
 # ============================================================================
 
 source [file join [file dirname [info script]] tclme.tcl]
+source [file join [file dirname [info script]] tclem.tcl]
 
 # Headless mode is already the kernel default, but be explicit.
 set Tclme::headless 1
