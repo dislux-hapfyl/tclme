@@ -1,7 +1,8 @@
 #!/usr/bin/env tclsh
-# tclme.tcl 
+# tclme.tcl
 
 namespace eval Tclme {
+    variable headless 1
     variable listeners      [dict create]   ;# event -> list of {priority cb owner}
     variable commands       [dict create]   ;# name  -> dict(script doc owner keys)
     variable aliases        [dict create]   ;# alias -> command
@@ -11,7 +12,7 @@ namespace eval Tclme {
     variable scriptfile [file normalize [info script]]
     variable plugindir  [file join [file dirname $scriptfile] plugins]
     catch { file mkdir $plugindir }
-    variable headless 1
+
     variable buffer_order    {}
     variable buffers         [dict create]  ;# name -> dict(path wid readonly)
     variable path_to_buffer  [dict create]
@@ -86,12 +87,6 @@ proc Tclme::Log {level msg} {
     }
 }
 
-proc Tclme::LogHistory {} {
-    variable log
-    return $log
-}
-
-
 proc Tclme::Print {text {tag ""}} {
     variable transcript
     variable transcript_limit
@@ -118,7 +113,6 @@ proc Tclme::IsHeadless {} {
 }
 
 # Headless output defaults.
-# The Tk frontend will override these.
 
 proc Tclme::Message {msg {tag message}} {
     Tclme::Print $msg $tag
@@ -129,19 +123,11 @@ proc Tclme::Note {msg} {
 }
 
 proc Tclme::UpdateStatus {msg} {
-    # No-op in the kernel.
-    # The Tk frontend overrides this.
 }
-
-# Headless prompt stub.
-# The Tk frontend overrides this with the real minibuffer prompt.
 
 proc Tclme::Prompt {label callback {completer ""}} {
     Tclme::Print "prompt not available in headless mode: $label" repl_error
 }
-
-# Headless binding stub.
-# The Tk frontend overrides this with real Tk bindings.
 
 proc Tclme::BindKey {name keys {tag TclmeText}} {
     variable commands
@@ -150,9 +136,6 @@ proc Tclme::BindKey {name keys {tag TclmeText}} {
         dict set commands $name keys $keys
     }
 }
-
-# Minimal headless buffer model.
-# The Tk frontend overrides these with real widget-backed buffers.
 
 proc Tclme::WidgetForBuffer {name} {
     return ""
@@ -201,11 +184,6 @@ proc Tclme::ShowInBuffer {name content {readonly 0}} {
     Tclme::Print $content
 }
 
-proc Tclme::SetOutputSink {cmd} {
-    variable output_sink
-    set output_sink $cmd
-}
-
 proc Tclme::RunExCommand {line} {
     set line [string trim $line]
     if {$line eq ""} {
@@ -219,7 +197,6 @@ proc Tclme::RunExCommand {line} {
     Tclme::Invoke $name $rest
 }
 
-
 proc Tclme::EvalInput {code} {
     if {[string trim $code] eq ""} {
         return
@@ -231,7 +208,6 @@ proc Tclme::EvalInput {code} {
         Tclme::Message "=> $result" repl_result
     }
 }
-
 
 proc Tclme::DispatchLine {line} {
     variable echo_input
@@ -496,7 +472,6 @@ proc Tclme::LoadPlugin {name file {saved ""}} {
     variable plugin_meta
     variable _owner
 
-    # If the plugin is already loaded, unload it first.
     if {[dict exists $plugin_meta $name]} {
         Tclme::UnloadPlugin $name
     }
@@ -609,13 +584,6 @@ proc Tclme::UnloadPlugin {name} {
 
     set ns [Tclme::PluginNamespace $name]
 
-    # Give the plugin a chance to clean up.
-    #
-    # cleanup is preferred.
-    # unload is the legacy fallback.
-    #
-    # Errors are logged, but unload continues.
-
     if {[catch {
         Tclme::PluginCallFirst $ns [list cleanup unload]
     } err]} {
@@ -633,7 +601,6 @@ proc Tclme::UnloadPlugin {name} {
           }
        }
     }
-
 
     # Remove aliases, but only if they still point to commands owned by this plugin.
     foreach alias [dict get $meta aliases] {
@@ -688,15 +655,6 @@ proc Tclme::PluginNamespace {name} {
     return "::Tclme::Plugin::$name"
 }
 
-# Call the first existing proc from a list of candidate names.
-#
-# Example:
-#   Tclme::PluginCallFirst $ns [list init load]
-#
-# If init exists, call init.
-# Otherwise, if load exists, call load.
-# Otherwise do nothing.
-
 proc Tclme::PluginCallFirst {ns proclist args} {
     foreach procname $proclist {
         set cmd ${ns}::$procname
@@ -714,7 +672,6 @@ proc Tclme::PluginCallFirst {ns proclist args} {
 
 proc Tclme::PluginSaveState {name} {
     set ns [Tclme::PluginNamespace $name]
-
     set saved ""
 
     catch {
@@ -733,11 +690,8 @@ proc Tclme::ReloadPlugin {name {quiet 0}} {
     }
 
     set file [dict get [dict get $plugin_meta $name] file]
-
-    # Save state before unloading.
     set saved [Tclme::PluginSaveState $name]
 
-    # Unload and load again.
     Tclme::UnloadPlugin $name
     Tclme::LoadPlugin $name $file $saved
 
@@ -878,7 +832,7 @@ proc Tclme::CmdHelpKernel {args} {
     }
 }
 
-proc Tclme::CmdReloadPluginsKernel {args} {
+proc Tclme::CmdReloadkPlugins {args} {
     set arg [string trim [join $args " "]]
     Tclme::ReloadPlugins $arg
 }
@@ -907,7 +861,7 @@ proc Tclme::CmdUnloadPlugin {args} {
     Tclme::Print "Unloaded plugin: $name"
 }
 
-proc Tclme::CmdPlugins {args} {
+proc Tclme::CmdListPlugins {args} {
     variable plugin_meta
 
     if {[dict size $plugin_meta] == 0} {
@@ -927,10 +881,10 @@ proc Tclme::InitKernel {} {
     Tclme::DefCommand eval        Tclme::CmdEvalKernel        "Evaluate Tcl code"
     Tclme::DefCommand help        Tclme::CmdHelpKernel        "Show available commands"
     Tclme::DefCommand log         Tclme::CmdLogKernel         "Show the diagnostic log"
-    Tclme::DefCommand reload      Tclme::CmdReloadPluginsKernel "Reload plugins"
+    Tclme::DefCommand reload          "Reload plugins"
     Tclme::DefCommand unload      Tclme::CmdUnloadPlugin        "Unload a plugin by name"
     Tclme::DefCommand load        Tclme::CmdLoadPlugin        "Load a plugin by name"
-    Tclme::DefCommand plugins     Tclme::CmdPlugins           "List loaded plugins"
+    Tclme::DefCommand plugins     Tclme::CmdListPlugins           "List loaded plugins"
 
     Tclme::DefAlias e eval
     Tclme::DefAlias l load
