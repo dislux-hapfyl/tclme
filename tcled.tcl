@@ -1,6 +1,14 @@
 # tclme.tcl 
 # Something of an editor
 
+namespace eval Tclme {
+    variable prompting        0
+    variable prompt_callback  ""
+    variable prompt_completer ""
+    variable prompt_history   {}
+    variable history_index    0
+}
+
 proc Tclme::BuildUI {} {
     wm title . "Tclme"
     wm minsize . 560 360
