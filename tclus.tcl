@@ -5,6 +5,7 @@
 package require Tk
 
 source [file join [file dirname [info script]] tclme.tcl]
+source [file join [file dirname [info script]] tclem.tcl]
 source [file join [file dirname [info script]] tcled.tcl]
 
 Tclme::InitGUI
