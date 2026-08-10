@@ -19,12 +19,6 @@ namespace eval Tclme {
     variable current_buffer  ""
     variable active_widget   ""
 
-    variable prompting        0
-    variable prompt_callback  ""
-    variable prompt_completer ""
-    variable prompt_history   {}
-    variable history_index    0
-
     variable transcript         {}
     variable transcript_limit   5000
     variable output_sink        ""
