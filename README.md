@@ -38,13 +38,6 @@ You can:
 - run a headless REPL frontend
 - build GUI and non-GUI tools on the same kernel
 
-Tclme is influenced by:
-
-- Emacs-style command systems
-- Acme-style mouse/text workflows
-- Lisp/Smalltalk live images
-- `tclsh` / `wish` interactive Tcl
-
 ---
 
 ## Features
