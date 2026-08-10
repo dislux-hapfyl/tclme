@@ -53,7 +53,7 @@ You can:
 - Hot plugin reload
 - Plugin lifecycle hooks
 - Plugin state save/restore
-- Strict nameless plugin DSL
+- Plugin DSL
 - Transcript / REPL output buffer
 - Output sink abstraction
 - Light/dark themes
@@ -71,7 +71,7 @@ Tclme is split into layers.
 
 ```text
 tclme.tcl               headless kernel
-tclem.tcl               strict nameless plugin DSL
+tclem.tcl               Plugin DSL
 tcled.tcl               Tk editor frontend
 tclit.tcl               headless REPL frontend
 tclus.tcl               GUI launcher
