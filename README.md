@@ -56,11 +56,9 @@ You can:
 - Plugin DSL
 - Transcript / REPL output buffer
 - Output sink abstraction
-- Light/dark themes
 - Buffer model with headless stubs
 - Minibuffer / ex-command style input
 - Extensible status line
-- Plugin-generated buffers
 - Experimental plugins for editing, navigation, search, highlighting, and more
 
 ---
@@ -136,7 +134,7 @@ Inside the REPL:
 ```text
 :help
 :plugins
-:eval expr 2 + 3
+expr 2 + 3
 :unload example
 :load example
 :reload example
@@ -373,54 +371,12 @@ Markdown preview
 find/replace panel
 debugger/inspector
 Acme-style mouse search
+HTTP fetch
 IRC client
 OpenBSD export helper
 ```
 
 These plugins are examples and testbeds for the kernel, not guaranteed stable applications.
-
----
-
-## Design principles
-
-Tclme tries to follow these rules:
-
-```text
-Keep the kernel small.
-Keep the kernel headless.
-Keep plugins optional.
-Keep the command loop central.
-Keep Tcl as the real language.
-Keep raw Tcl available as an escape hatch.
-Make reload work.
-Make cleanup mandatory.
-Make the system inspectable.
-Prefer live programming over restarts.
-```
-
----
-
-## Freeze policy
-
-The kernel API is treated as the stable boundary.
-
-The kernel includes:
-
-```text
-command registry
-event bus
-plugin loader
-transcript
-output sink
-dispatch loop
-headless stubs
-```
-
-Frontends may evolve more freely.
-
-Plugins should target the kernel API, not frontend internals.
-
-Breaking kernel changes require a major version bump.
 
 ---
 
@@ -437,31 +393,6 @@ Useful commands:
 :eval dict keys $::Tclme::plugin_meta
 :eval info commands ::Tclme::Plugin::NAME::*
 ```
-
----
-
-## Roadmap
-
-Possible future work:
-
-```text
-buffer-local keymaps
-mode-local keymaps
-event context objects
-command argument parsing
-session persistence
-plugin manifests
-plugin dependency metadata
-rich headless prompts
-frontend capability negotiation
-test harness
-buffer model formalization
-more language highlighting
-better search/replace
-tiling workspace improvements
-Acme-style mouse tools
-```
-
 ---
 
 ## Contributing
