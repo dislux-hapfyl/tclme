@@ -102,7 +102,16 @@ proc Tclme::SetTheme {key val} {
 }
 
 proc Tclme::GetTheme {key} {
-    variable theme
+    variable theme [dict create \
+        bg          "#F5F5F5"  fg          "#2C2C2C" \
+        editor_bg   "#FFFFFF"  editor_fg   "#1A1A1A" \
+        status_bg   "#2C2C2C"  status_fg   "#DDDDDD" \
+        minibuf_bg  "#FFFFFF"  minibuf_fg  "#1A1A1A" \
+        accent      "#4A7CFE"  separator   "#D8D8D8" \
+        scrollbar   "#D8D8D8"  cursor      "#1A1A1A" \
+        font        {Consolas 12} \
+        status_font {Consolas 10} \
+    ]
     return [dict get $theme $key]
 }
 
