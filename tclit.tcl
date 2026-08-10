@@ -16,7 +16,7 @@ set Tclme::headless 1
 set Tclme::echo_input 0
 
 Tclme::InitKernel
-
+puts ""
 puts "Tclit: tclme headless REPL"
 puts "Type :help for commands."
 puts "Load plugins with :load NAME."
