@@ -759,8 +759,8 @@ proc BindKeys {} {
     set bindtag [GuessBindTag]
 
     set pairs [list \
-        [list project-grep     <Control-x><Key-g>] \
-        [list project-grep-dir <Control-x><Key-G>] \
+        [list project-grep     <Control-x>g] \
+        [list project-grep-dir <Control-x>G] \
     ]
 
     foreach pair $pairs {
