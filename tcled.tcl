@@ -326,6 +326,11 @@ proc Tclme::UpdateStatus {msg} {
     }
 }
 
+proc Tclme::SetOutputSink {cmd} {
+    variable output_sink
+    set output_sink $cmd
+}
+
 proc Tclme::TkTranscriptSink {text tag} {
     variable transcript_buffer 
 
