@@ -27,7 +27,6 @@ namespace eval Tclme {
 
     variable transcript         {}
     variable transcript_limit   5000
-    variable transcript_buffer  "*repl*"
     variable output_sink        ""
 
     variable status_job  ""
@@ -86,31 +85,6 @@ proc Tclme::QualifyScript {script owner} {
     }
 
     return [lreplace $script 0 0 $qual]
-}
-
-proc Tclme::CommonPrefix {items} {
-    if {[llength $items] == 0} {
-        return ""
-    }
-
-    set prefix [lindex $items 0]
-    foreach s [lrange $items 1 end] {
-        set i 0
-        set max [expr {min([string length $prefix], [string length $s])}]
-
-        while {$i < $max && [string index $prefix $i] eq [string index $s $i]} {
-            incr i
-        }
-
-        if {$i == 0} {
-            set prefix ""
-            break
-        }
-
-        set prefix [string range $prefix 0 [expr {$i - 1}]]
-    }
-
-    return $prefix
 }
 
 proc Tclme::Log {level msg} {
