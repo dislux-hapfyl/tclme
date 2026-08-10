@@ -639,6 +639,6 @@ Tclme::On cursor-moved    OnSoon
 
 Tclme::DefCommandAndBind buffer-bar  cmd-toggle      <Control-x><Control-l> "Toggle the buffer button bar"
 Tclme::DefCommandAndBind buffer-prev cmd-buffer-prev <Control-x><Control-b> "Switch to previous buffer"
-Tclme::DefCommandAndBind buffer-next cmd-buffer-next <Control-x><Control-f> "Switch to next buffer"
+Tclme::DefCommandAndBind buffer-next cmd-buffer-next <Control-x><Control-v> "Switch to next buffer"
 Tclme::DefAlias tabs buffer-bar
 
