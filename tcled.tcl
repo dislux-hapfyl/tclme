@@ -241,7 +241,7 @@ proc Tclme::UpdateStatus {msg} {
 }
 
 proc Tclme::TkTranscriptSink {text tag} {
-    variable transcript_buffer
+    variable transcript_buffer 
 
     set w [Tclme::WidgetForBuffer $transcript_buffer]
 
@@ -249,29 +249,32 @@ proc Tclme::TkTranscriptSink {text tag} {
         return
     }
 
-    set old_state [$w cget -state]
+    catch {
+        $w configure -state normal
 
-    $w configure -state normal
+        if {$tag eq ""} {
+            $w insert end "$text\n"
+        } else {
+            $w insert end "$text\n" [list $tag]
+        }
 
-    if {$tag eq ""} {
-        $w insert end "$text\n"
-    } else {
-        $w insert end "$text\n" [list $tag]
+        $w see end
+
+        $w edit modified 0
+
+        $w configure -state disabled
     }
-
-    $w see end
-
-    $w configure -state $old_state
 }
 
 
-proc Tclme::OpenTranscript {} {
-    variable transcript_buffer
+proc Tclme::OpenTranscript {args} {
+    variable transcript_buffer "*repl*"
     variable transcript
     variable buffers
 
     Tclme::SwitchToBuffer $transcript_buffer
 
+ 
     dict set buffers $transcript_buffer readonly 1
 
     set w $::Tclme::active_widget
@@ -298,9 +301,13 @@ proc Tclme::OpenTranscript {} {
         }
     }
 
+ 
+ 
     $w edit modified 0
     $w see end
     $w configure -state disabled
+
+    Tclme::RefreshStatus
 }
 
 proc Tclme::BindKey {name keys {tag TclmeText}} {
@@ -509,6 +516,31 @@ proc Tclme::HistoryNext {} {
     }
 
     .minibar.entry icursor end
+}
+
+proc Tclme::CommonPrefix {items} {
+    if {[llength $items] == 0} {
+        return ""
+    }
+
+    set prefix [lindex $items 0]
+    foreach s [lrange $items 1 end] {
+        set i 0
+        set max [expr {min([string length $prefix], [string length $s])}]
+
+        while {$i < $max && [string index $prefix $i] eq [string index $s $i]} {
+            incr i
+        }
+
+        if {$i == 0} {
+            set prefix ""
+            break
+        }
+
+        set prefix [string range $prefix 0 [expr {$i - 1}]]
+    }
+
+    return $prefix
 }
 
 proc Tclme::MinibarComplete {} {
