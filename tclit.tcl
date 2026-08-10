@@ -17,9 +17,9 @@ set Tclme::echo_input 0
 
 Tclme::InitKernel
 
-puts "Tclme headless REPL"
+puts "Tclit: tclme headless REPL"
 puts "Type :help for commands."
-puts "Load plugins with :load-plugin NAME."
+puts "Load plugins with :load NAME."
 puts ""
 
 # Optional: automatically load headless-safe plugins and/or your init file
