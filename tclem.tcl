@@ -140,10 +140,10 @@ proc ::Tclme::Plugin {body} {
 
     # Temporarily expose DSL directives inside the plugin namespace.
 
-    set old_path [namespace path $ns]
+    set old_path [namespace eval $ns {namespace path}]
 
     if {[lsearch -exact $old_path ::Tclme::DSL] < 0} {
-        namespace path $ns [linsert $old_path 0 ::Tclme::DSL]
+        namespace eval $ns [list namespace path [linsert $old_path 0 ::Tclme::DSL]]
     }
 
     # Make plugin ownership explicit while the DSL body is evaluated.
@@ -156,8 +156,7 @@ proc ::Tclme::Plugin {body} {
     } err]
 
     set ::Tclme::_owner $old_owner
-    namespace path $ns $old_path
-
+    namespace eval $ns [list namespace path $old_path]
     if {$rc} {
         ::Tclme::DSL::Forget $ns
 
