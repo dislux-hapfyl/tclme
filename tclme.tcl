@@ -881,7 +881,7 @@ proc Tclme::InitKernel {} {
     Tclme::DefCommand eval        Tclme::CmdEvalKernel        "Evaluate Tcl code"
     Tclme::DefCommand help        Tclme::CmdHelpKernel        "Show available commands"
     Tclme::DefCommand log         Tclme::CmdLogKernel         "Show the diagnostic log"
-    Tclme::DefCommand reload      Tclme::CmdReloadkPlugins       "Reload kernel plugins"
+    Tclme::DefCommand reload      Tclme::CmdReloadkPlugins    "Reload kernel plugins"
     Tclme::DefCommand unload      Tclme::CmdUnloadPlugin        "Unload a plugin by name"
     Tclme::DefCommand load        Tclme::CmdLoadPlugin        "Load a plugin by name"
     Tclme::DefCommand plugins     Tclme::CmdListPlugins           "List loaded plugins"
