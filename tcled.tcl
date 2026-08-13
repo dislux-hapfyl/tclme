@@ -1,12 +1,24 @@
-# tclme.tcl 
+# Tclme.tcl 
 # Something of an editor
 
 namespace eval Tclme {
     variable prompting        0
     variable prompt_callback  ""
     variable prompt_completer ""
-    variable prompt_history   {}
-    variable history_index    0
+    variable prompt_history       {}
+    variable history_index        0
+    variable eval_switch_to_repl  1
+    variable transcript_buffer    "*repl*"
+    variable theme [dict create \
+        bg          "#F5F5F5"  fg          "#2C2C2C" \
+        editor_bg   "#FFFFFF"  editor_fg   "#1A1A1A" \
+        status_bg   "#2C2C2C"  status_fg   "#DDDDDD" \
+        minibuf_bg  "#FFFFFF"  minibuf_fg  "#1A1A1A" \
+        accent      "#4A7CFE"  separator   "#D8D8D8" \
+        scrollbar   "#D8D8D8"  cursor      "#1A1A1A" \
+        font        {Consolas 12} \
+        status_font {Consolas 10} \
+    ]
 }
 
 proc Tclme::BuildUI {} {
@@ -21,7 +33,6 @@ proc Tclme::BuildUI {} {
     pack .sep1 -fill x
 
     label .status \
-        -text " Tclme " \
         -anchor w \
         -bg [Tclme::GetTheme status_bg] \
         -fg [Tclme::GetTheme status_fg] \
@@ -175,16 +186,7 @@ proc Tclme::SetTheme {key val} {
 }
 
 proc Tclme::GetTheme {key} {
-    variable theme [dict create \
-        bg          "#F5F5F5"  fg          "#2C2C2C" \
-        editor_bg   "#FFFFFF"  editor_fg   "#1A1A1A" \
-        status_bg   "#2C2C2C"  status_fg   "#DDDDDD" \
-        minibuf_bg  "#FFFFFF"  minibuf_fg  "#1A1A1A" \
-        accent      "#4A7CFE"  separator   "#D8D8D8" \
-        scrollbar   "#D8D8D8"  cursor      "#1A1A1A" \
-        font        {Consolas 12} \
-        status_font {Consolas 10} \
-    ]
+    variable theme 
     return [dict get $theme $key]
 }
 
@@ -263,41 +265,7 @@ proc Tclme::ApplyTheme {} {
     Tclme::Emit theme-changed
 }
 
-
-proc Tclme::CreateBufferWidget {name wid} {
-    set container ".ws.$wid"
-    set txt "$container.txt"
-
-    frame $container -bg [Tclme::GetTheme bg]
-
-    text $txt \
-        -undo 1 \
-        -wrap word \
-        -padx 6 \
-        -pady 4 \
-        -bg [Tclme::GetTheme editor_bg] \
-        -fg [Tclme::GetTheme editor_fg] \
-        -insertbackground [Tclme::GetTheme cursor] \
-        -font [Tclme::GetTheme font] \
-        -highlightthickness 0 \
-        -yscrollcommand [list "$container.vs" set]
-
-    scrollbar "$container.vs" \
-        -orient vertical \
-        -command [list $txt yview] \
-        -bg [Tclme::GetTheme scrollbar]
-
-    pack "$container.vs" -side right -fill y
-    pack $txt -side left -fill both -expand 1
-
-    bindtags $txt [list $txt TclmeText Text [winfo toplevel $container] all]
-
-    bind $txt <<Modified>>      { Tclme::RefreshStatus }
-    bind $txt <KeyRelease>      { after idle { Tclme::CursorMoved } }
-    bind $txt <ButtonRelease-1> { after idle { Tclme::CursorMoved } }
-}
-
-proc Tclme::Message {msg} {
+proc Tclme::Message {msg {tag message}} {
     variable prompting
 
     if {![winfo exists .minibar.entry]} {
@@ -325,38 +293,6 @@ proc Tclme::UpdateStatus {msg} {
         .status configure -text " $msg "
     }
 }
-
-proc Tclme::SetOutputSink {cmd} {
-    variable output_sink
-    set output_sink $cmd
-}
-
-proc Tclme::TkTranscriptSink {text tag} {
-    variable transcript_buffer 
-
-    set w [Tclme::WidgetForBuffer $transcript_buffer]
-
-    if {$w eq ""} {
-        return
-    }
-
-    catch {
-        $w configure -state normal
-
-        if {$tag eq ""} {
-            $w insert end "$text\n"
-        } else {
-            $w insert end "$text\n" [list $tag]
-        }
-
-        $w see end
-
-        $w edit modified 0
-
-        $w configure -state disabled
-    }
-}
-
 
 proc Tclme::OpenTranscript {args} {
     variable transcript_buffer "*repl*"
@@ -460,6 +396,62 @@ proc Tclme::Prompt {label callback {completer ""}} {
     Tclme::Emit minibuffer-prompted $label
 }
 
+proc Tclme::SwitchToTranscript {} {
+    variable transcript_buffer
+
+    if {![info exists transcript_buffer]} {
+        set transcript_buffer "*repl*"
+    }
+
+    if {[::Tclme::WidgetForBuffer $transcript_buffer] eq ""} {
+        ::Tclme::OpenTranscript
+    } else {
+        ::Tclme::SwitchToBuffer $transcript_buffer
+    }
+}
+
+proc Tclme::EvalInput {code} {
+    variable eval_switch_to_repl
+
+    set code [string trim $code]
+
+    if {$code eq ""} {
+        return
+    }
+
+    Tclme::SwitchToTranscript
+
+    if {[catch {uplevel #0 $code} result]} {
+        ::Tclme::Print "Error: $result" repl_error
+    } else {
+        if {$result ne ""} {
+            ::Tclme::Print "=> $result" repl_result
+        }
+    }
+}
+
+proc Tclme::DispatchLine {line} {
+    variable echo_input
+
+    set line [string trim $line]
+
+    if {$line eq ""} {
+        return
+    }
+
+    if {$echo_input} {
+        ::Tclme::Print "> $line" repl_input
+    }
+
+    if {[string match ::* $line]} {
+        ::Tclme::EvalInput $line
+    } elseif {[string index $line 0] eq ":"} {
+        ::Tclme::RunExCommand [string range $line 1 end]
+    } else {
+        ::Tclme::EvalInput $line
+    }
+}
+
 proc Tclme::MinibarReturn {} {
     variable prompting
     variable prompt_callback
@@ -478,14 +470,12 @@ proc Tclme::MinibarReturn {} {
         .minibar.prompt configure -text ""
         .minibar.entry delete 0 end
 
-        Tclme::HistoryAdd $input
+        ::Tclme::HistoryAdd $input
 
         if {[catch {uplevel #0 [list {*}$cb $input]} err]} {
-            Tclme::Log error "prompt callback: $err"
+            ::Tclme::Log error "prompt callback: $err"
         }
 
-        # Important:
-        # If the callback opened another prompt, do not steal focus back.
         if {!$prompting && [winfo exists $active_widget]} {
             focus $active_widget
         }
@@ -493,20 +483,31 @@ proc Tclme::MinibarReturn {} {
         return
     }
 
+    # Normal minibuffer input.
+
     set t [string trim $input]
 
-    if {[string index $t 0] eq ":"} {
-        Tclme::HistoryAdd $t
-        .minibar.entry delete 0 end
-        Tclme::DispatchLine $t
+    if {$t eq ""} {
+        return
+    }
 
-        # Important:
-        # If the command opened a prompt, leave focus in the minibuffer.
-        if {!$prompting && [winfo exists $active_widget]} {
+    ::Tclme::HistoryAdd $t
+    .minibar.entry delete 0 end
+
+    set looks_like_command [expr {
+        [string index $t 0] eq ":" &&
+        ![string match ::* $t]
+    }]
+
+    ::Tclme::DispatchLine $t
+
+    if {!$prompting} {
+        if {$looks_like_command && [winfo exists $active_widget]} {
             focus $active_widget
+        } else {
+            # Keep focus in the minibuffer for direct Tcl evaluation.
+            focus .minibar.entry
         }
-    } else {
-        Tclme::Message "Type :command. Tab completes; Up/Down history."
     }
 }
 
@@ -1382,10 +1383,6 @@ proc Tclme::CmdScratch {args} {
     Tclme::SwitchToBuffer "scratch"
 }
 
-proc Tclme::CmdQuit {args} {
-    Tclme::Quit
-}
-
 proc Tclme::CmdWrite {args} {
     Tclme::SaveCurrentBuffer
 }
@@ -1512,6 +1509,40 @@ proc Tclme::SwitchByNameOrIndex {target} {
     }
 }
 
+proc Tclme::SetOutputSink {cmd} {
+    variable output_sink
+    set output_sink $cmd
+}
+
+proc Tclme::TkTranscriptSink {text tag} {
+    variable transcript_buffer
+
+    set w [Tclme::WidgetForBuffer $transcript_buffer]
+
+    if {$w eq ""} {
+        catch { Tclme::OpenTranscript }
+        set w [Tclme::WidgetForBuffer $transcript_buffer]
+
+        if {$w eq ""} {
+            return
+        }
+    }
+
+    catch {
+        $w configure -state normal
+
+        if {$tag eq ""} {
+            $w insert end "$text\n"
+        } else {
+            $w insert end "$text\n" [list $tag]
+        }
+
+        $w see end
+        $w edit modified 0
+        $w configure -state disabled
+    }
+}
+
 # ============================================================================
 #  Init
 # ============================================================================
@@ -1520,18 +1551,16 @@ proc Tclme::InitGUI {} {
     variable headless 0
     Tclme::InitKernel
 
-    Tclme::DefCommandAndBind quit    Tclme::CmdQuit          <Control-x><Control-c> "Quit Tclme"
-    Tclme::DefCommandAndBind write   Tclme::CmdWrite         <Control-x><Control-s> "Save current buffer"
-    Tclme::DefCommandAndBind edit    Tclme::CmdEdit          <Control-x><Control-f> "Open a file"
-    Tclme::DefCommandAndBind eval    Tclme::CmdEval          <Control-x><Control-e> "Evaluate Tcl"
-    Tclme::DefCommandAndBind switch  Tclme::CmdSwitch        <Control-x>b           "Switch buffer"
+    Tclme::DefCommandAndBind write   Tclme::CmdWrite         <Control-s> "Save current buffer"
+    Tclme::DefCommandAndBind edit    Tclme::CmdEdit          <Control-o> "Open a file"
+    Tclme::DefCommandAndBind eval    Tclme::CmdEval          <Control-Return> "Evaluate Tcl"
     Tclme::DefCommandAndBind kill    Tclme::CmdKill          <Control-x>k           "Kill buffer"
     Tclme::DefCommandAndBind reload  Tclme::CmdReloadPlugins <Control-x><Control-r> "Reload plugins"
     Tclme::DefCommandAndBind cancel  Tclme::CmdCancel        <Control-g>            "Cancel prompt"
     Tclme::DefCommandAndBind goto    Tclme::CmdGoto          <Control-l>            "Goto line"
-    Tclme::DefCommandAndBind new     Tclme::CmdNew           <Control-x><Control-space>  "Create an untitled buffer"
-    Tclme::DefCommandAndBind repl    Tclme::OpenTranscript   <Control-x><Control-Return> "Open REPL transcript"
+    Tclme::DefCommandAndBind new     Tclme::CmdNew           <Control-n>  "Create an untitled buffer"
 
+    Tclme::DefCommand repl        Tclme::OpenTranscript "Open repl"
     Tclme::DefCommand save-as     Tclme::CmdSaveAs      "Save current buffer"
     Tclme::DefCommand list        Tclme::CmdList        "List open buffers"
     Tclme::DefCommand buffers     Tclme::CmdList        "List open buffers"
@@ -1556,9 +1585,10 @@ proc Tclme::InitGUI {} {
     Tclme::DefAlias th  theme
 
     Tclme::BuildUI
-    Tclme::SetOutputSink Tclme::TkTranscriptSink
     Tclme::SwitchToBuffer "scratch"
+    Tclme::SetOutputSink Tclme::TkTranscriptSink
     Tclme::LoadAllPlugins
     Tclme::LoadUserInit
     Tclme::Emit editor-started
 }
+
