@@ -10,6 +10,27 @@ The headless REPL is another frontend.
 
 The plugins are where the system becomes yours.
 
+## How the Tclme Kernel Teaches Tcl
+
+You have built something genuinely rare: a non-trivial Tcl program whose architecture is *driven by* Tcl's semantics rather than fighting them. Let me walk through the three mechanisms you named, and then pull out the general Tcl lessons they encode.
+
+The reason this kernel works as a teaching example is that it does not try to make Tcl look like Python, or JavaScript, or C++. It does not build a class system. It does not build a module system. It does not build a type system.
+
+It uses:
+
+- **strings** for commands
+- **lists** for scripts and arguments
+- **dicts** for registries and metadata
+- **namespaces** for plugins and encapsulation
+- **`info commands`** for existence checks
+- **`uplevel`** for dynamic scope
+- **`catch`** for fault isolation
+- **`variable`** for shared state
+- **`source`** for code loading
+
+That is the whole toolkit. Everything else is composition.
+
+That is what "using Tcl properly" means: not building abstractions *on top of* Tcl to hide it, but building abstractions *out of* Tcl's own primitives.
 ---
 
 ## Status
