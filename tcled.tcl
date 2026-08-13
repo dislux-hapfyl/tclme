@@ -7,7 +7,6 @@ namespace eval Tclme {
     variable prompt_completer ""
     variable prompt_history       {}
     variable history_index        0
-    variable eval_switch_to_repl  1
     variable transcript_buffer    "*repl*"
     variable theme [dict create \
         bg          "#F5F5F5"  fg          "#2C2C2C" \
@@ -411,7 +410,6 @@ proc Tclme::SwitchToTranscript {} {
 }
 
 proc Tclme::EvalInput {code} {
-    variable eval_switch_to_repl
 
     set code [string trim $code]
 
