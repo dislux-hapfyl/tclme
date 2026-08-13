@@ -30,7 +30,8 @@ It uses:
 
 That is the whole toolkit. Everything else is composition.
 
-That is what "using Tcl properly" means: not building abstractions *on top of* Tcl to hide it, but building abstractions *out of* Tcl's own primitives.
+That is what "using Tcl properly" means: not building abstractions **on top of** Tcl to hide it, but building abstractions _out of_ Tcl's own primitives.
+
 ---
 
 ## Status
