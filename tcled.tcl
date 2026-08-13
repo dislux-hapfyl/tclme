@@ -1,4 +1,4 @@
-# Tclme.tcl 
+# tcled.tcl 
 # Something of an editor
 
 namespace eval Tclme {
