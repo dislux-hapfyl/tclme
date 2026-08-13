@@ -139,11 +139,7 @@ plugin experimentation
 
 Required:
 
-```text
 Tcl 8.6
-Tk 8.6
-wish8.6
-```
 
 ---
 
@@ -163,28 +159,6 @@ expr 2 + 3
 ```
 
 The headless REPL is useful for testing plugins, kernel changes, and command behavior without starting the GUI.
-
----
-
-## Default keybindings
-
-Default keybindings depend on the frontend.
-
-Common Tk frontend bindings include:
-
-```text
-C-x C-c       quit
-C-x C-s       save current buffer
-C-x C-f       open file
-C-x C-e       evaluate Tcl
-C-x b         switch buffer
-C-x k         kill buffer
-C-x C-r       reload plugins
-C-g           cancel prompt
-C-l           goto line
-```
-
-Plugins may add their own bindings.
 
 ---
 
@@ -410,10 +384,10 @@ Useful commands:
 :plugins
 :plugin-show NAME
 :plugin-clean
-:eval expr 2 + 3
-:eval dict keys $::Tclme::commands
-:eval dict keys $::Tclme::plugin_meta
-:eval info commands ::Tclme::Plugin::NAME::*
+expr 2 + 3
+dict keys $::Tclme::commands
+dict keys $::Tclme::plugin_meta
+info commands ::Tclme::Plugin::NAME::*
 ```
 ---
 
