@@ -12,7 +12,7 @@ The plugins are where the system becomes yours.
 
 ## How the Tclme Kernel Teaches Tcl
 
-You have built something genuinely rare: a non-trivial Tcl program whose architecture is *driven by* Tcl's semantics rather than fighting them. 
+This non-trivial Tcl program whose architecture is *driven by* Tcl's semantics rather than fighting them. 
 
 The reason this kernel works as a teaching example is that it does not try to make Tcl look like Python, or JavaScript, or C++. It does not build a class system. It does not build a module system. It does not build a type system.
 
