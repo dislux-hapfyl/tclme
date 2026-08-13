@@ -83,7 +83,7 @@ proc Tclme::Log {level msg} {
     }
 
     if {$level eq "error"} {
-        catch { Tclme::Message "! $msg" }
+        catch { Tclme::Print "! $msg" }
     }
 }
 
@@ -112,76 +112,12 @@ proc Tclme::IsHeadless {} {
     return $headless
 }
 
-# Headless output defaults.
-
-proc Tclme::Message {msg {tag message}} {
-    Tclme::Print $msg $tag
-}
-
-proc Tclme::Note {msg} {
-    Tclme::Print $msg note
-}
-
-proc Tclme::UpdateStatus {msg} {
-}
-
-proc Tclme::Prompt {label callback {completer ""}} {
-    Tclme::Print "prompt not available in headless mode: $label" repl_error
-}
-
 proc Tclme::BindKey {name keys {tag TclmeText}} {
     variable commands
 
     if {$keys ne "" && [dict exists $commands $name]} {
         dict set commands $name keys $keys
     }
-}
-
-proc Tclme::WidgetForBuffer {name} {
-    return ""
-}
-
-proc Tclme::GetBufferContent {name} {
-    variable buffers
-
-    if {[dict exists $buffers $name model text]} {
-        return [dict get $buffers $name model text]
-    }
-
-    return ""
-}
-
-proc Tclme::SetBufferContent {name text} {
-    variable buffers
-
-    if {![dict exists $buffers $name]} {
-        dict set buffers $name [dict create path "" wid "" readonly 0]
-    }
-
-    dict set buffers $name model text $text
-}
-
-proc Tclme::SwitchToBuffer {name} {
-    variable buffers
-    variable buffer_order
-    variable current_buffer
-
-    if {![dict exists $buffers $name]} {
-        dict set buffers $name [dict create path "" wid "" readonly 0]
-        lappend buffer_order $name
-        Tclme::Emit buffer-created $name
-    }
-
-    set current_buffer $name
-
-    Tclme::Emit buffer-switched $name
-}
-
-proc Tclme::ShowInBuffer {name content {readonly 0}} {
-    Tclme::SwitchToBuffer $name
-    Tclme::SetBufferContent $name $content
-    Tclme::Print $name
-    Tclme::Print $content
 }
 
 proc Tclme::RunExCommand {line} {
@@ -203,9 +139,9 @@ proc Tclme::EvalInput {code} {
     }
  
     if {[catch {uplevel #0 $code} result]} {
-        Tclme::Message "Error: $result" repl_error
+        Tclme::Print "Error: $result" repl_error
     } else {
-        Tclme::Message "=> $result" repl_result
+        Tclme::Print "=> $result" repl_result
     }
 }
 
@@ -418,7 +354,7 @@ proc Tclme::Invoke {name args} {
             Tclme::Log error "command '$name': $err"
         }
     } else {
-        Tclme::Message "Undefined command: $name" repl_error
+        Tclme::Print "Undefined command: $name" repl_error
     }
 
     Tclme::Emit after-command $name
@@ -465,7 +401,7 @@ proc Tclme::LoadUserInit {} {
 proc Tclme::ReloadUserInit {} {
     variable initfile
     Tclme::LoadUserInit
-    Tclme::Message "Reloaded [file tail $initfile]"
+    Tclme::Print "Reloaded [file tail $initfile]"
 }
 
 proc Tclme::LoadPlugin {name file {saved ""}} {
@@ -667,9 +603,6 @@ proc Tclme::PluginCallFirst {ns proclist args} {
     return {}
 }
 
-# Save plugin state using the new `state` hook if present,
-# otherwise the old `save-state` hook.
-
 proc Tclme::PluginSaveState {name} {
     set ns [Tclme::PluginNamespace $name]
     set saved ""
@@ -685,7 +618,7 @@ proc Tclme::ReloadPlugin {name {quiet 0}} {
     variable plugin_meta
 
     if {![dict exists $plugin_meta $name]} {
-        Tclme::Message "Not loaded: $name"
+        Tclme::Print "Not loaded: $name"
         return
     }
 
@@ -696,7 +629,7 @@ proc Tclme::ReloadPlugin {name {quiet 0}} {
     Tclme::LoadPlugin $name $file $saved
 
     if {!$quiet} {
-        Tclme::Message "Reloaded plugin: $name"
+        Tclme::Print "Reloaded plugin: $name"
     }
 }
 
@@ -755,7 +688,7 @@ proc Tclme::ReloadPlugins {{name ""}} {
         }
     }
 
-    Tclme::Message "Plugins reloaded."
+    Tclme::Print "Plugins reloaded."
 }
 
 proc Tclme::LoadAllPlugins {} {
@@ -773,19 +706,18 @@ proc Tclme::LoadPluginByName {name} {
     set file [file join $plugindir "$name.tcl"]
 
     if {![file exists $file]} {
-        Tclme::Message "No such plugin file: $file"
+        Tclme::Print "No such plugin file: $file"
         return
     }
 
     Tclme::LoadPlugin $name $file
 }
 
-
 proc Tclme::CmdEvalKernel {args} {
     set code [string trim [join $args " "]]
 
     if {$code eq ""} {
-        Tclme::Message "Usage: :eval CODE"
+        Tclme::Print "Usage: :eval CODE"
         return
     }
 
@@ -796,7 +728,7 @@ proc Tclme::CmdLogKernel {args} {
     variable log
  
     if {[llength $log] == 0} {
-        Tclme::Message "Log empty."
+        Tclme::Print "Log empty."
         return
     }
  
@@ -841,7 +773,7 @@ proc Tclme::CmdLoadPlugin {args} {
     set name [string trim [join $args " "]]
 
     if {$name eq ""} {
-        Tclme::Message "Usage: :load NAME"
+        Tclme::Print "Usage: :load NAME"
         return
     }
     
@@ -853,7 +785,7 @@ proc Tclme::CmdUnloadPlugin {args} {
     set name [string trim [join $args " "]]
 
     if {$name eq ""} {
-        Tclme::Message "Usage: :unload NAME"
+        Tclme::Print "Usage: :unload NAME"
         return
     }
 
