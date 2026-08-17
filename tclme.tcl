@@ -13,24 +13,15 @@ namespace eval Tclme {
     variable plugindir  [file join [file dirname $scriptfile] plugins]
     catch { file mkdir $plugindir }
 
-    variable buffer_order    {}
-    variable buffers         [dict create]  ;# name -> dict(path wid readonly)
-    variable path_to_buffer  [dict create]
-    variable buffer_seq      0
-    variable current_buffer  ""
-    variable active_widget   ""
-
     variable transcript         {}
     variable transcript_limit   5000
     variable output_sink        ""
-
-    variable status_job  ""
     variable echo_input  1
-
+    
     variable plugin_meta     [dict create]
     variable initfile
-    variable ifilename
-    set ifilename ".tclmerc"
+    variable ifilename       ".tclmerc"
+
     if {[info exists ::env(HOME)]} {
         set initfile [file join $::env(HOME) $ifilename]
     } elseif {[info exists ::env(USERPROFILE)]} {
@@ -41,6 +32,11 @@ namespace eval Tclme {
 }
 
 #  Utilities
+
+proc Tclme::IsHeadless {} {
+    variable headless
+    return $headless
+}
 
 proc Tclme::NamespaceOwner {ns} {
     if {[regexp {^::Tclme::Plugin::([^:]+)} $ns -> owner]} {
@@ -107,17 +103,38 @@ proc Tclme::Print {text {tag ""}} {
     }
 }
 
-proc Tclme::IsHeadless {} {
-    variable headless
-    return $headless
-}
-
 proc Tclme::BindKey {name keys {tag TclmeText}} {
     variable commands
 
     if {$keys ne "" && [dict exists $commands $name]} {
         dict set commands $name keys $keys
     }
+}
+
+proc Tclme::Invoke {name args} {
+    variable commands
+    variable aliases
+
+    if {[dict exists $aliases $name]} {
+        set name [dict get $aliases $name]
+    }
+    if {![dict exists $commands $name]} {
+        Tclme::Print "Error: '$name' not found." repl_error
+    }
+
+    Tclme::Emit before-command $name {*}$args
+    
+    set entry  [dict get $commands $name]
+    set script [dict get $entry script] 
+    set owner  [dict get $entry owner]
+    set qualified [Tclme::QualifyScript $script $owner]
+
+    if {[catch {uplevel #0 [list {*}$qualified {*}$args]} err]} {
+      Tclme::Log error "command '$name': $err"
+      Tclme::Print "Error: $name" repl_error
+    }
+
+    Tclme::Emit after-command $name
 }
 
 proc Tclme::RunExCommand {line} {
@@ -158,7 +175,7 @@ proc Tclme::DispatchLine {line} {
         Tclme::Print "> $line" repl_input
     }
 
-    if {[string index $line 0] eq ":"} {
+    if {[string index $line 0] eq ";"} {
         Tclme::RunExCommand [string range $line 1 end]
     } else {
         Tclme::EvalInput $line
@@ -336,30 +353,6 @@ proc Tclme::DefCommandAndBind {name script keys {doc ""}} {
     }
 }
 
-proc Tclme::Invoke {name args} {
-    variable commands
-    variable aliases
-
-    if {[dict exists $aliases $name]} {
-        set name [dict get $aliases $name]
-    }
-
-    Tclme::Emit before-command $name {*}$args
-
-    if {[dict exists $commands $name]} {
-        set entry [dict get $commands $name]
-        set script [Tclme::QualifyScript [dict get $entry script] [dict get $entry owner]]
-
-        if {[catch {uplevel #0 [list {*}$script {*}$args]} err]} {
-            Tclme::Log error "command '$name': $err"
-        }
-    } else {
-        Tclme::Print "Undefined command: $name" repl_error
-    }
-
-    Tclme::Emit after-command $name
-}
-
 #  Plugins
 
 proc Tclme::After {ms script} {
@@ -385,7 +378,6 @@ proc Tclme::RunAfter {script} {
     if {[catch {uplevel #0 [list {*}$script]} err]} {
         Tclme::Log error "after: $err"
     }
-
 }
 
 proc Tclme::LoadUserInit {} {
@@ -657,7 +649,8 @@ proc Tclme::PluginAfter {ms script} {
 proc Tclme::ReloadPlugins {{name ""}} {
     variable plugindir
     variable plugin_meta
-
+    variable headless 
+    
     set name [string trim $name]
 
     if {$name ne ""} {
@@ -687,8 +680,12 @@ proc Tclme::ReloadPlugins {{name ""}} {
             Tclme::LoadPlugin $nm $f
         }
     }
-
-    Tclme::Print "Plugins reloaded."
+    
+    if {$headless eq 1} {
+        Tclme::Print "Plugins reloaded."
+    } else {
+        Tclme::Message "Plugins reloaded."
+    }
 }
 
 proc Tclme::LoadAllPlugins {} {
@@ -764,11 +761,6 @@ proc Tclme::CmdHelpKernel {args} {
     }
 }
 
-proc Tclme::CmdReloadkPlugins {args} {
-    set arg [string trim [join $args " "]]
-    Tclme::ReloadPlugins $arg
-}
-
 proc Tclme::CmdLoadPlugin {args} {
     set name [string trim [join $args " "]]
 
@@ -813,10 +805,10 @@ proc Tclme::InitKernel {} {
     Tclme::DefCommand eval        Tclme::CmdEvalKernel        "Evaluate Tcl code"
     Tclme::DefCommand help        Tclme::CmdHelpKernel        "Show available commands"
     Tclme::DefCommand log         Tclme::CmdLogKernel         "Show the diagnostic log"
-    Tclme::DefCommand reload      Tclme::CmdReloadkPlugins    "Reload kernel plugins"
-    Tclme::DefCommand unload      Tclme::CmdUnloadPlugin        "Unload a plugin by name"
+    Tclme::DefCommand reload      Tclme::CmdReloadPlugins     "Reload plugin(s)"
+    Tclme::DefCommand unload      Tclme::CmdUnloadPlugin      "Unload a plugin by name"
     Tclme::DefCommand load        Tclme::CmdLoadPlugin        "Load a plugin by name"
-    Tclme::DefCommand plugins     Tclme::CmdListPlugins           "List loaded plugins"
+    Tclme::DefCommand plugins     Tclme::CmdListPlugins       "List loaded plugins"
 
     Tclme::DefAlias e eval
     Tclme::DefAlias l load
