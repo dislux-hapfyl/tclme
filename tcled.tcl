@@ -5,9 +5,16 @@ namespace eval Tclme {
     variable prompting        0
     variable prompt_callback  ""
     variable prompt_completer ""
-    variable prompt_history       {}
-    variable history_index        0
-    variable transcript_buffer    "*repl*"
+    variable prompt_history  {}
+    variable history_index   0
+    variable buffer_seq      0
+    variable buffer_order    {}
+    variable buffers         [dict create]  ;# name -> dict(path wid readonly)
+    variable path_to_buffer  [dict create]
+
+    variable current_buffer  ""
+    variable active_widget   ""
+    variable status_job  ""
     variable theme [dict create \
         bg          "#F5F5F5"  fg          "#2C2C2C" \
         editor_bg   "#FFFFFF"  editor_fg   "#1A1A1A" \
@@ -21,7 +28,7 @@ namespace eval Tclme {
 }
 
 proc Tclme::BuildUI {} {
-    wm title . "Tclme"
+    wm title . "Tcled"
     wm minsize . 560 360
     . configure -bg [Tclme::GetTheme bg]
 
@@ -179,11 +186,6 @@ proc Tclme::DarkPalette {} {
     ]
 }
 
-proc Tclme::SetTheme {key val} {
-    variable theme
-    dict set theme $key $val
-}
-
 proc Tclme::GetTheme {key} {
     variable theme 
     return [dict get $theme $key]
@@ -282,11 +284,6 @@ proc Tclme::Message {msg {tag message}} {
     .minibar.entry xview end
 }
 
-# Transient note that never clobber the minibuffer entry.
-proc Tclme::Note {msg} {
-    Tclme::UpdateStatus $msg
-}
-
 proc Tclme::UpdateStatus {msg} {
     if {[winfo exists .status]} {
         .status configure -text " $msg "
@@ -303,7 +300,7 @@ proc Tclme::OpenTranscript {args} {
  
     dict set buffers $transcript_buffer readonly 1
 
-    set w $::Tclme::active_widget
+    set w $Tclme::active_widget
 
     if {![winfo exists $w]} {
         return
@@ -327,8 +324,6 @@ proc Tclme::OpenTranscript {args} {
         }
     }
 
- 
- 
     $w edit modified 0
     $w see end
     $w configure -state disabled
@@ -402,10 +397,10 @@ proc Tclme::SwitchToTranscript {} {
         set transcript_buffer "*repl*"
     }
 
-    if {[::Tclme::WidgetForBuffer $transcript_buffer] eq ""} {
-        ::Tclme::OpenTranscript
+    if {[Tclme::WidgetForBuffer $transcript_buffer] eq ""} {
+        Tclme::OpenTranscript
     } else {
-        ::Tclme::SwitchToBuffer $transcript_buffer
+        Tclme::SwitchToBuffer $transcript_buffer
     }
 }
 
@@ -417,19 +412,18 @@ proc Tclme::EvalInput {code} {
         return
     }
 
-    Tclme::SwitchToTranscript
-
     if {[catch {uplevel #0 $code} result]} {
-        ::Tclme::Print "Error: $result" repl_error
+        Tclme::Print "Error: $result" repl_error
+        Tclme::SwitchToTranscript
+
     } else {
-        if {$result ne ""} {
-            ::Tclme::Print "=> $result" repl_result
+        if {$result ne "" } {
+            Tclme::Print "=> $result" repl_result
         }
     }
 }
 
 proc Tclme::DispatchLine {line} {
-    variable echo_input
 
     set line [string trim $line]
 
@@ -437,16 +431,12 @@ proc Tclme::DispatchLine {line} {
         return
     }
 
-    if {$echo_input} {
-        ::Tclme::Print "> $line" repl_input
-    }
-
     if {[string match ::* $line]} {
-        ::Tclme::EvalInput $line
-    } elseif {[string index $line 0] eq ":"} {
-        ::Tclme::RunExCommand [string range $line 1 end]
+        Tclme::EvalInput $line
+    } elseif {[string index $line 0] eq ";"} {
+        Tclme::RunExCommand [string range $line 1 end]
     } else {
-        ::Tclme::EvalInput $line
+        Tclme::EvalInput $line
     }
 }
 
@@ -468,10 +458,10 @@ proc Tclme::MinibarReturn {} {
         .minibar.prompt configure -text ""
         .minibar.entry delete 0 end
 
-        ::Tclme::HistoryAdd $input
+        Tclme::HistoryAdd $input
 
         if {[catch {uplevel #0 [list {*}$cb $input]} err]} {
-            ::Tclme::Log error "prompt callback: $err"
+            Tclme::Log error "prompt callback: $err"
         }
 
         if {!$prompting && [winfo exists $active_widget]} {
@@ -489,22 +479,21 @@ proc Tclme::MinibarReturn {} {
         return
     }
 
-    ::Tclme::HistoryAdd $t
+    Tclme::HistoryAdd $t
     .minibar.entry delete 0 end
 
     set looks_like_command [expr {
-        [string index $t 0] eq ":" &&
+        [string index $t 0] eq ";" &&
         ![string match ::* $t]
     }]
 
-    ::Tclme::DispatchLine $t
+    Tclme::DispatchLine $t
 
     if {!$prompting} {
         if {$looks_like_command && [winfo exists $active_widget]} {
             focus $active_widget
         } else {
-            # Keep focus in the minibuffer for direct Tcl evaluation.
-            focus .minibar.entry
+             focus .minibar.entry
         }
     }
 }
@@ -659,7 +648,7 @@ proc Tclme::MinibarComplete {} {
         set t [string trim $txt]
 
         # Complete :command only while it is still a single token.
-        if {![regexp {^:(\S*)$} $t -> prefix]} {
+        if {![regexp {^;(\S*)$} $t -> prefix]} {
             return
         }
 
@@ -676,7 +665,7 @@ proc Tclme::MinibarComplete {} {
 
         foreach n [lsort -unique $names] {
             if {[string equal -length $plen $prefix $n]} {
-                lappend cands ":$n"
+                lappend cands ";$n"
             }
         }
     }
@@ -684,7 +673,7 @@ proc Tclme::MinibarComplete {} {
     set n [llength $cands]
 
     if {$n == 0} {
-        Tclme::Note "No completions"
+        Tclme::UpdateStatus "No completions"
         return
     }
 
@@ -703,7 +692,7 @@ proc Tclme::MinibarComplete {} {
         .minibar.entry icursor end
     }
 
-    Tclme::Note [join [lrange $cands 0 12] "  "]
+    Tclme::UpdateStatus [join [lrange $cands 0 12] "  "]
 }
 
 proc Tclme::CompleteBuffer {txt} {
@@ -750,10 +739,6 @@ proc Tclme::CompleteFile {txt} {
 
     return $out
 }
-
-# ============================================================================
-#  Buffers
-# ============================================================================
 
 proc Tclme::WidgetForBuffer {name} {
     variable buffers
@@ -911,7 +896,7 @@ proc Tclme::CreateBufferWidget {name wid} {
 
     pack "$container.vs" -side right -fill y
     pack $txt -side left -fill both -expand 1
-
+    Tclme::ApplyTheme
     bindtags $txt [list $txt TclmeText Text [winfo toplevel $container] all]
 
     bind $txt <<Modified>>      { Tclme::RefreshStatus }
@@ -1027,10 +1012,6 @@ proc Tclme::ShowInBuffer {name content {readonly 0}} {
 
     Tclme::RefreshStatus
 }
-
-# ============================================================================
-#  File operations
-# ============================================================================
 
 proc Tclme::FindBufferForPath {full} {
     variable path_to_buffer
@@ -1237,10 +1218,6 @@ proc Tclme::Quit {} {
     exit 0
 }
 
-# ============================================================================
-#  Status line
-# ============================================================================
-
 proc Tclme::RefreshStatus {} {
     variable status_job
 
@@ -1282,10 +1259,6 @@ proc Tclme::DoRefreshStatus {} {
     Tclme::UpdateStatus $base
 }
 
-# ============================================================================
-#  Goto
-# ============================================================================
-
 proc Tclme::GotoLine {n} {
     variable active_widget
 
@@ -1312,10 +1285,6 @@ proc Tclme::GotoLine {n} {
     Tclme::Emit cursor-moved
     Tclme::RefreshStatus
 }
-
-# ============================================================================
-#  Help / log buffers
-# ============================================================================
 
 proc Tclme::ShowLogBuffer {} {
     variable log
@@ -1361,9 +1330,6 @@ proc Tclme::ShowHelpBuffer {} {
     Tclme::ShowInBuffer "*Help*" [join $lines \n] 1
 }
 
-# ============================================================================
-#  Built-in command implementations
-# ============================================================================
 proc Tclme::CmdNew {args} {
     set name [string trim [join $args " "]]
 
@@ -1419,7 +1385,7 @@ proc Tclme::CmdEval {args} {
     set arg [string trim [join $args " "]]
 
     if {$arg eq ""} {
-        Tclme::Prompt "Eval: " Tclme::EvalInput
+        Tclme::Prompt "% " Tclme::EvalInput
     } else {
         Tclme::EvalInput $arg
     }
@@ -1541,22 +1507,18 @@ proc Tclme::TkTranscriptSink {text tag} {
     }
 }
 
-# ============================================================================
-#  Init
-# ============================================================================
-
 proc Tclme::InitGUI {} {
     variable headless 0
     Tclme::InitKernel
 
-    Tclme::DefCommandAndBind write   Tclme::CmdWrite         <Control-s> "Save current buffer"
-    Tclme::DefCommandAndBind edit    Tclme::CmdEdit          <Control-o> "Open a file"
-    Tclme::DefCommandAndBind eval    Tclme::CmdEval          <Control-Return> "Evaluate Tcl"
-    Tclme::DefCommandAndBind kill    Tclme::CmdKill          <Control-x>k           "Kill buffer"
-    Tclme::DefCommandAndBind reload  Tclme::CmdReloadPlugins <Control-x><Control-r> "Reload plugins"
+    Tclme::DefCommandAndBind write   Tclme::CmdWrite         <Control-s>            "Save current buffer"
+    Tclme::DefCommandAndBind edit    Tclme::CmdEdit          <Control-o>            "Open a file"
+    Tclme::DefCommandAndBind eval    Tclme::CmdEval          <Control-Return>       "Evaluate Tcl"
+    Tclme::DefCommandAndBind kill    Tclme::CmdKill          <Control-r>k           "Kill buffer"
+    Tclme::DefCommandAndBind reload  Tclme::CmdReloadPlugins <Control-r><Control-r> "Reload plugins"
     Tclme::DefCommandAndBind cancel  Tclme::CmdCancel        <Control-g>            "Cancel prompt"
     Tclme::DefCommandAndBind goto    Tclme::CmdGoto          <Control-l>            "Goto line"
-    Tclme::DefCommandAndBind new     Tclme::CmdNew           <Control-n>  "Create an untitled buffer"
+    Tclme::DefCommandAndBind new     Tclme::CmdNew           <Control-n>            "Create an untitled buffer"
 
     Tclme::DefCommand repl        Tclme::OpenTranscript "Open repl"
     Tclme::DefCommand save-as     Tclme::CmdSaveAs      "Save current buffer"
@@ -1565,7 +1527,7 @@ proc Tclme::InitGUI {} {
     Tclme::DefCommand log         Tclme::CmdLog         "Open log buffer"
     Tclme::DefCommand help        Tclme::CmdHelp        "Open help buffer"
     Tclme::DefCommand reload-init Tclme::CmdReloadInit  "Reload init file"
-    Tclme::DefCommand theme       Tclme::CmdTheme       "Switch theme: light/dark"
+    Tclme::DefCommand theme       Tclme::CmdTheme       "Switch theme: light/dark/sol/sold"
     Tclme::DefCommand scratch     Tclme::CmdScratch     "Switch to scratch or create new"
 
     Tclme::DefAlias rp  repl
